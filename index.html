@@ -1465,8 +1465,27 @@ body{-webkit-tap-highlight-color:transparent;}
               <option value="cancelled">Cancelada</option>
             </select>
           </div>
+          <div class="filter-group">
+            <span class="filter-label">Dia da Viagem:</span>
+            <input type="date" class="admin-date-input" id="adm-travel-date-filter" onchange="renderAdminTable()">
+          </div>
           <input type="text" class="admin-search" id="adm-search" placeholder="🔍 Buscar por nome ou CPF..." oninput="renderAdminTable()">
           <button class="export-btn btn-csv" style="padding:9px 14px;font-size:12px;" onclick="clearAdminFilters()">Limpar filtros</button>
+        </div>
+
+        <div class="export-btns">
+          <button class="export-btn btn-xlsx" onclick="exportXLSX()">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zm-3.5 5l1.5 2.5L9.5 17H8l2-3.2L8.1 11H9.5l1 1.8 1-1.8H13l-1.9 2.8 2 3.2H11.5l-1.5-2.5z"/></svg>
+            Exportar Excel
+          </button>
+          <button class="export-btn btn-pdf" onclick="exportPDF()">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zM8.5 15c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5.67-1.5 1.5-1.5 1.5.67 1.5 1.5zm1 0c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5S9.5 16.38 9.5 15zm5.5 0h1.5v3H16v-1h-1v1h-1v-3h1v1h1v-1z"/></svg>
+            Exportar PDF
+          </button>
+          <button class="export-btn btn-csv" onclick="exportCSV()">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zm-2 8H9v-4h2v4zm4 0h-2v-4h2v4zm4-2h-2v-2h2v2z"/></svg>
+            Exportar CSV
+          </button>
         </div>
 
         <div class="admin-table-scroll-top" id="adm-scroll-top"><div id="adm-scroll-top-inner"></div></div>
@@ -1491,21 +1510,6 @@ body{-webkit-tap-highlight-color:transparent;}
           </table>
         </div>
         <div id="adm-empty" class="admin-empty" style="display:none">Nenhum passageiro encontrado para os filtros selecionados.</div>
-
-        <div class="export-btns">
-          <button class="export-btn btn-xlsx" onclick="exportXLSX()">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zm-3.5 5l1.5 2.5L9.5 17H8l2-3.2L8.1 11H9.5l1 1.8 1-1.8H13l-1.9 2.8 2 3.2H11.5l-1.5-2.5z"/></svg>
-            Exportar Excel
-          </button>
-          <button class="export-btn btn-pdf" onclick="exportPDF()">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zM8.5 15c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5.67-1.5 1.5-1.5 1.5.67 1.5 1.5zm1 0c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5S9.5 16.38 9.5 15zm5.5 0h1.5v3H16v-1h-1v1h-1v-3h1v1h1v-1z"/></svg>
-            Exportar PDF
-          </button>
-          <button class="export-btn btn-csv" onclick="exportCSV()">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zm-2 8H9v-4h2v4zm4 0h-2v-4h2v4zm4-2h-2v-2h2v2z"/></svg>
-            Exportar CSV
-          </button>
-        </div>
       </div>
     </div>
 
@@ -1892,9 +1896,9 @@ body{-webkit-tap-highlight-color:transparent;}
 // ═══════════════════════════════════════════════════════════════
 // SUPABASE — BANCO DE DADOS CENTRAL (dados compartilhados entre dispositivos)
 // ═══════════════════════════════════════════════════════════════
-const SB_BASE = 'https://oaphntmclemsriikispz.supabase.co';
+const SB_BASE = 'https://mqkyqlconpldxcnviepy.supabase.co';
 const SB_URL  = SB_BASE + '/rest/v1';
-const SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9hcGhudG1jbGVtc3JpaWtpc3B6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NjE3MzEsImV4cCI6MjEwMDEzNzczMX0.7Wu-bzFuAWiyVKDPyyeOdiF-yZMMMXUQ3-XE8eGwGeo';
+const SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1xa3lxbGNvbnBsZHhjbnZpZXB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1MjM0MDcsImV4cCI6MjA5OTA5OTQwN30.KUOqiCq8as7IJFGcG006rWsY1CJhQxbKLLuU5q3v7LE';
 let dbOnline = false; // indica se a última operação com o banco funcionou
 
 // ═══════════════════════════════════════════════════════════════
@@ -6312,6 +6316,7 @@ function getFilteredPassagens() {
   const dateVal = (document.getElementById('adm-date-filter') || {}).value || '';
   const busVal  = (document.getElementById('adm-bus-filter') || {}).value || '';
   const statusVal = (document.getElementById('adm-status-filter') || {}).value || '';
+  const travelDateVal = (document.getElementById('adm-travel-date-filter') || {}).value || ''; // yyyy-mm-dd
   const search  = ((document.getElementById('adm-search') || {}).value || '').toLowerCase().trim();
 
   const now = new Date();
@@ -6337,9 +6342,20 @@ function getFilteredPassagens() {
     // Status filter (mesmo critério usado na coluna "Status" da tabela)
     const ticketStatus = t.cancelled ? 'cancelled' : (t.boardedAt ? 'boarded' : (isBoardingPast(t) ? 'absent' : 'waiting'));
     const statusMatch = !statusVal || ticketStatus === statusVal;
+    // Dia da viagem (data real de embarque, não a data da reserva)
+    let travelDateMatch = true;
+    if (travelDateVal) {
+      const travelOf = t.travelDate || (t.date ? t.date.slice(0,10) : null);
+      const td = parseTicketDate(travelOf);
+      if (!td) { travelDateMatch = false; }
+      else {
+        const sel = new Date(travelDateVal + 'T00:00:00');
+        travelDateMatch = td.getFullYear() === sel.getFullYear() && td.getMonth() === sel.getMonth() && td.getDate() === sel.getDate();
+      }
+    }
     // Search filter (name or CPF)
     const searchMatch = !search || t.passenger.toLowerCase().includes(search) || t.cpf.includes(search);
-    return dateMatch && busMatch && statusMatch && searchMatch;
+    return dateMatch && busMatch && statusMatch && travelDateMatch && searchMatch;
   });
 }
 
@@ -6449,6 +6465,7 @@ function clearAdminFilters() {
   document.getElementById('adm-date-filter').value = '';
   document.getElementById('adm-bus-filter').value = '';
   document.getElementById('adm-status-filter').value = '';
+  document.getElementById('adm-travel-date-filter').value = '';
   document.getElementById('adm-search').value = '';
   document.getElementById('adm-date-group').style.display = 'none';
   renderAdminTable();
