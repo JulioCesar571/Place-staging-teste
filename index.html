@@ -673,6 +673,12 @@ body{-webkit-tap-highlight-color:transparent;}
 .seat.selected{background:var(--c4);border-color:var(--c6);color:#fff;transform:translateY(-2px);box-shadow:0 6px 20px rgba(43,173,160,0.45);}
 .seat.selected::after{content:'✓';position:absolute;top:-6px;right:-6px;width:14px;height:14px;background:var(--c7);color:#fff;font-size:8px;border-radius:50%;display:flex;align-items:center;justify-content:center;line-height:14px;text-align:center;}
 .seat.occupied{background:#d0d8d7;border-color:#9ab5b2;color:#7a9a97;cursor:not-allowed;opacity:0.7;}
+.seat.partial-ida{background:#DCEEFB;border-color:#3B82C4;color:#1B4F7A;}
+.seat.partial-ida:hover{background:#C5E4F9;box-shadow:0 4px 14px rgba(59,130,196,0.3);}
+.seat.partial-ida::after{content:'➡️';position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#3B82C4;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;}
+.seat.partial-volta{background:#FDEBD8;border-color:#D4720B;color:#8A4A08;}
+.seat.partial-volta:hover{background:#FCDFC0;box-shadow:0 4px 14px rgba(212,114,11,0.3);}
+.seat.partial-volta::after{content:'⬅️';position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#D4720B;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;}
 .seat.monitor{background:#FFF8DC;border-color:#D4A017;color:#7A5800;cursor:not-allowed;}
 .seat.monitor:hover{transform:none;background:#FFF0A0;border-color:#B8860B;box-shadow:0 4px 14px rgba(212,160,23,0.35);}
 .seat.monitor:hover::after{content:attr(data-passenger);position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#7A5800;color:#FFF8DC;font-size:11px;font-weight:500;padding:5px 10px;border-radius:8px;white-space:nowrap;z-index:50;pointer-events:none;font-family:'DM Sans',sans-serif;box-shadow:0 4px 12px rgba(122,88,0,0.3);}
@@ -706,6 +712,8 @@ body{-webkit-tap-highlight-color:transparent;}
 .leg-free{background:var(--c1);border:2px solid var(--c4);}
 .leg-sel{background:var(--c4);border:2px solid var(--c6);}
 .leg-occ{background:#d0d8d7;border:2px solid #9ab5b2;}
+.leg-partial-ida{background:#DCEEFB;border:2px solid #3B82C4;}
+.leg-partial-volta{background:#FDEBD8;border:2px solid #D4720B;}
 .leg-drv{background:var(--c7);border:2px solid var(--c6);}
 .leg-wc{background:var(--c6);border:2px solid var(--c5);}
 .leg-mon{background:#FFF8DC;border:2px solid #D4A017;}
@@ -945,6 +953,8 @@ body{-webkit-tap-highlight-color:transparent;}
             <div class="legend-item"><div class="legend-dot leg-free"></div>Disponível</div>
             <div class="legend-item"><div class="legend-dot leg-sel"></div>Selecionada</div>
             <div class="legend-item"><div class="legend-dot leg-occ"></div>Ocupada</div>
+            <div class="legend-item"><div class="legend-dot leg-partial-ida"></div>Só ida ocupada (livre p/ volta)</div>
+            <div class="legend-item"><div class="legend-dot leg-partial-volta"></div>Só volta ocupada (livre p/ ida)</div>
             <div class="legend-item"><div class="legend-dot leg-drv"></div>Motorista</div>
             <div class="legend-item"><div class="legend-dot leg-wc"></div>Banheiro (WC)</div>
             <div class="legend-item"><div class="legend-dot leg-mon"></div>Monitor ⭐</div>
@@ -3357,7 +3367,12 @@ function buildCabin() {
     const el = document.createElement('div');
     const isOcc = occupied.has(num);
     const isMon = MONITOR_SEATS.has(num);
-    el.className = 'seat' + (isMon ? ' monitor' : (isOcc ? ' occupied' : ''));
+    // Poltrona parcialmente ocupada: um sentido já tem dono, o outro ainda está
+    // livre. Mostra visualmente qual sentido falta, sem bloquear o clique.
+    const dirsHere = !isOcc && !isMon ? seatDirectionsToday.get(num) : null;
+    const partialIda = dirsHere && dirsHere.has('ida');     // ida já tomada → só resta volta
+    const partialVolta = dirsHere && dirsHere.has('volta'); // volta já tomada → só resta ida
+    el.className = 'seat' + (isMon ? ' monitor' : (isOcc ? ' occupied' : (partialIda ? ' partial-ida' : (partialVolta ? ' partial-volta' : ''))));
     el.dataset.num = num;
     if (isMon) {
       el.setAttribute('title', 'Monitor');
@@ -3370,6 +3385,8 @@ function buildCabin() {
       el.setAttribute('data-passenger', pName);
       el.innerHTML = seatSVG + `<span class="seat-name">${firstName}</span>`;
     } else {
+      if (partialIda) el.setAttribute('title', 'Ida já reservada — livre só para volta');
+      else if (partialVolta) el.setAttribute('title', 'Volta já reservada — livre só para ida');
       el.innerHTML = seatSVG + `<span class="seat-num">${num}</span>`;
       el.onclick = () => openModal(num, el);
     }
