@@ -2096,7 +2096,7 @@ const dbErr = e => { dbOnline = false; console.warn('DB:', e.message); showToast
 function dbSaveUser(u)        { return sb('/users', { method: 'POST', prefer: 'resolution=merge-duplicates', body: JSON.stringify([userToRow(u)]) }).catch(dbErr); }
 function dbDeleteUser(cpf)    { return sb('/users?cpf=eq.' + encodeURIComponent(cpf), { method: 'DELETE' }).catch(dbErr); }
 function dbInsertTicket(t)    { return sb('/tickets', { method: 'POST', prefer: 'resolution=merge-duplicates', body: JSON.stringify([ticketToRow(t)]) }).catch(dbErr); }
-function dbInsertTicketStrict(t) { return sb('/tickets', { method: 'POST', prefer: 'resolution=merge-duplicates', body: JSON.stringify([ticketToRow(t)]) }); }
+function dbInsertTicketStrict(t) { return sb('/tickets', { method: 'POST', prefer: 'resolution=merge-duplicates,return=representation', body: JSON.stringify([ticketToRow(t)]) }); }
 function dbPatchTicket(code, fields) { return sb('/tickets?code=eq.' + encodeURIComponent(code), { method: 'PATCH', body: JSON.stringify(fields) }).catch(dbErr); }
 function dbInsertHistory(cpf, h) {
   return sb('/history', { method: 'POST', prefer: 'resolution=ignore-duplicates', body: JSON.stringify([{
@@ -3454,26 +3454,26 @@ function selectDirection(el, dir) {
   document.querySelectorAll('#direction-options .embarque-opt').forEach(o => o.classList.remove('active'));
   el.classList.add('active'); currentDirection = dir;
 }
-function confirmSeat() {
+async function confirmSeat() {
   if (!currentSeat || !currentLocal) return;
   const okBtn = document.getElementById('btn-ok');
-  if (okBtn) { okBtn.disabled = true; setTimeout(() => { okBtn.disabled = false; }, 600); }
+  if (okBtn) okBtn.disabled = true;
   // Allow only 1 seat per passenger
   if (selected.size >= 1 && !selected.has(currentSeat)) {
     const existing = Array.from(selected.keys())[0];
     showToast(`Você já selecionou a poltrona ${existing}. Remova-a antes de escolher outra.`);
     closeModal();
+    if (okBtn) okBtn.disabled = false;
     return;
   }
-  const seatEl = document.querySelector(`.seat[data-num="${currentSeat}"]`);
-  // Guarda os valores ANTES de fechar o modal — closeModal() zera currentSeat/
-  // currentLocal, e usá-los depois disso mostrava "null" no aviso de confirmação.
-  const seatNum = currentSeat, localConfirmado = currentLocal, dirConfirmada = currentDirection;
   selected.set(currentSeat, {local: currentLocal, direction: currentDirection});
-  if(seatEl) seatEl.classList.add('selected');
-  closeModal(); updateUI();
-  const dirLabel = dirConfirmada === 'ida' ? 'somente ida' : (dirConfirmada === 'volta' ? 'somente volta' : 'ida e volta');
-  showToast(`Poltrona ${seatNum} — ${localConfirmado} (${dirLabel}) ✓`);
+  closeModal();
+  // Confirma direto no banco agora — sem esse passo, o "✓" aqui parecia uma
+  // confirmação final, mas só guardava a escolha na tela; a reserva de
+  // verdade só acontecia num segundo clique separado (fora do popup), o que
+  // levava a pessoa a achar que já tinha terminado sem realmente ter reservado.
+  await confirmSeats();
+  if (okBtn) okBtn.disabled = false;
 }
 function removeSeat(num) {
   selected.delete(num);
@@ -3550,7 +3550,13 @@ async function confirmSeats() {
 
     let created = false;
     try {
-      await dbInsertTicketStrict(t);
+      const resposta = await dbInsertTicketStrict(t);
+      // Diagnóstico temporário: mostra na tela o que foi enviado e o que o
+      // banco realmente gravou (pedimos de volta a linha com return=representation).
+      // Ajuda a confirmar se "direction" está chegando certo, sem precisar do DevTools.
+      const gravado = Array.isArray(resposta) && resposta[0] ? resposta[0].direction : '(sem resposta)';
+      console.log('[DIAGNÓSTICO] Enviado direction=', t.direction, '| Banco confirmou direction=', gravado, '| Resposta completa:', resposta);
+      showToast(`🔎 Enviado: "${t.direction}" — Banco confirmou: "${gravado}"`, 12000);
       passagens.push({...t});
       allPassagens.push({...t});
       created = true;
@@ -3560,6 +3566,8 @@ async function confirmSeats() {
         buildCabin(); updateUI();
         return;
       }
+      console.log('[DIAGNÓSTICO] Erro completo ao inserir:', err.message);
+      showToast(`🔎 Erro ao gravar: ${err.message}`, 12000);
       dbErr(err);
       passagens.push({...t});
       allPassagens.push({...t});
