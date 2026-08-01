@@ -1915,9 +1915,9 @@ body{-webkit-tap-highlight-color:transparent;}
 // ═══════════════════════════════════════════════════════════════
 // SUPABASE — BANCO DE DADOS CENTRAL (dados compartilhados entre dispositivos)
 // ═══════════════════════════════════════════════════════════════
-const SB_BASE = 'https://mqkyqlconpldxcnviepy.supabase.co';
+const SB_BASE = 'https://oaphntmclemsriikispz.supabase.co';
 const SB_URL  = SB_BASE + '/rest/v1';
-const SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1xa3lxbGNvbnBsZHhjbnZpZXB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1MjM0MDcsImV4cCI6MjA5OTA5OTQwN30.KUOqiCq8as7IJFGcG006rWsY1CJhQxbKLLuU5q3v7LE';
+const SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9hcGhudG1jbGVtc3JpaWtpc3B6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NjE3MzEsImV4cCI6MjEwMDEzNzczMX0.7Wu-bzFuAWiyVKDPyyeOdiF-yZMMMXUQ3-XE8eGwGeo';
 let dbOnline = false; // indica se a última operação com o banco funcionou
 
 // ═══════════════════════════════════════════════════════════════
@@ -3466,11 +3466,14 @@ function confirmSeat() {
     return;
   }
   const seatEl = document.querySelector(`.seat[data-num="${currentSeat}"]`);
+  // Guarda os valores ANTES de fechar o modal — closeModal() zera currentSeat/
+  // currentLocal, e usá-los depois disso mostrava "null" no aviso de confirmação.
+  const seatNum = currentSeat, localConfirmado = currentLocal, dirConfirmada = currentDirection;
   selected.set(currentSeat, {local: currentLocal, direction: currentDirection});
   if(seatEl) seatEl.classList.add('selected');
   closeModal(); updateUI();
-  const dirLabel = currentDirection === 'ida' ? 'somente ida' : (currentDirection === 'volta' ? 'somente volta' : 'ida e volta');
-  showToast(`Poltrona ${currentSeat} — ${currentLocal} (${dirLabel}) ✓`);
+  const dirLabel = dirConfirmada === 'ida' ? 'somente ida' : (dirConfirmada === 'volta' ? 'somente volta' : 'ida e volta');
+  showToast(`Poltrona ${seatNum} — ${localConfirmado} (${dirLabel}) ✓`);
 }
 function removeSeat(num) {
   selected.delete(num);
