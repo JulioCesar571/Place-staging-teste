@@ -737,6 +737,7 @@ body{-webkit-tap-highlight-color:transparent;}
 .field-readonly-hint{font-size:11px;color:var(--c5);margin-top:2px;}
 .embarque-options{display:flex;flex-direction:column;gap:10px;}
 .embarque-opt{display:flex;align-items:center;gap:14px;border:2px solid var(--c2);border-radius:14px;padding:14px 16px;cursor:pointer;transition:border-color 0.15s,background 0.15s,transform 0.12s;background:#fff;}
+.embarque-opt.disabled-opt{opacity:0.4;cursor:not-allowed;background:#f2f2f2;}
 .embarque-opt:hover{border-color:var(--c4);background:var(--c1);transform:translateX(3px);}
 .embarque-opt.active{border-color:var(--c4);background:var(--c1);}
 .embarque-opt.active .opt-radio{background:var(--c4);border-color:var(--c4);}
@@ -1088,6 +1089,14 @@ body{-webkit-tap-highlight-color:transparent;}
     <div class="field-group">
       <label class="field-label">Local de Embarque</label>
       <div class="embarque-options" id="embarque-options"></div>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Sentido da Viagem</label>
+      <div class="embarque-options" id="direction-options">
+        <div class="embarque-opt" data-dir="ida_volta" onclick="selectDirection(this,'ida_volta')">🔄 Ida e volta</div>
+        <div class="embarque-opt" data-dir="ida" onclick="selectDirection(this,'ida')">➡️ Somente ida</div>
+        <div class="embarque-opt" data-dir="volta" onclick="selectDirection(this,'volta')">⬅️ Somente volta</div>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
@@ -1469,6 +1478,15 @@ body{-webkit-tap-highlight-color:transparent;}
             <span class="filter-label">Dia da Viagem:</span>
             <input type="date" class="admin-date-input" id="adm-travel-date-filter" onchange="renderAdminTable()">
           </div>
+          <div class="filter-group">
+            <span class="filter-label">Sentido:</span>
+            <select class="filter-select" id="adm-direction-filter" onchange="renderAdminTable()">
+              <option value="">Todos</option>
+              <option value="ida_volta">Ida e volta</option>
+              <option value="ida">Somente ida</option>
+              <option value="volta">Somente volta</option>
+            </select>
+          </div>
           <input type="text" class="admin-search" id="adm-search" placeholder="🔍 Buscar por nome ou CPF..." oninput="renderAdminTable()">
           <button class="export-btn btn-csv" style="padding:9px 14px;font-size:12px;" onclick="clearAdminFilters()">Limpar filtros</button>
         </div>
@@ -1498,6 +1516,7 @@ body{-webkit-tap-highlight-color:transparent;}
                 <th>CPF</th>
                 <th>Poltrona</th>
                 <th>Linha</th>
+                <th>Sentido</th>
                 <th>Embarque</th>
                 <th>Dia da Viagem</th>
                 <th>Reserva</th>
@@ -2062,13 +2081,13 @@ function rowToTicket(r) {
   return { code: r.code, cpf: r.cpf, passenger: r.passenger, seat: r.seat, local: r.local,
            busId: r.bus_id, busName: r.bus_name, bus: r.bus, date: r.date, travelDate: r.travel_date,
            reservedAt: r.reserved_at, boardedAt: r.boarded_at, cancelled: r.cancelled,
-           cancelReason: r.cancel_reason, valid: r.valid };
+           cancelReason: r.cancel_reason, valid: r.valid, direction: r.direction || 'ida_volta' };
 }
 function ticketToRow(t) {
   return { code: t.code, cpf: t.cpf, passenger: t.passenger, seat: String(t.seat), local: t.local,
            bus_id: t.busId || null, bus_name: t.busName || null, bus: t.bus || null, date: t.date || null, travel_date: t.travelDate || null,
            reserved_at: t.reservedAt || null, boarded_at: t.boardedAt || null, cancelled: !!t.cancelled,
-           cancel_reason: t.cancelReason || null, valid: t.valid !== false };
+           cancel_reason: t.cancelReason || null, valid: t.valid !== false, direction: t.direction || 'ida_volta' };
 }
 
 // ── Escritas (write-through) ──────────────────────────────────
@@ -2569,10 +2588,12 @@ function nextFreeMonitorSeat(busId) {
 }
 const OCCUPIED_DATA = {}; // produção: nenhuma poltrona pré-ocupada
 const occupied = new Map(Object.entries(OCCUPIED_DATA).map(([k,v]) => [Number(k), v]));
+const seatDirectionsToday = new Map(); // poltrona -> Set de sentidos já ocupados (pro modal saber o que oferecer)
 const selected = new Map();
 const TOTAL = 46;
 let currentSeat = null;
 let currentLocal = null;
+let currentDirection = 'ida_volta'; // padrão: ida e volta (mantém o comportamento de sempre por padrão)
 
 // ---- SVGs ----
 const seatSVG   = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v8a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V4zm2 1v7h6V5H9zm-3 12a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-2z"/></svg>`;
@@ -3040,6 +3061,10 @@ function escapeHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+function directionLabel(t) {
+  return { ida_volta: 'Ida e volta', ida: 'Somente ida', volta: 'Somente volta' }[t.direction || 'ida_volta'];
+}
+
 // ---- PASSAGENS ----
 const passagens = []; // array of ticket objects
 
@@ -3308,8 +3333,12 @@ function buildCabin() {
       : 'Confirmar Reserva';
   }
   occupied.clear();
+  seatDirectionsToday.clear();
   if (weekOcc) {
-    weekOcc.forEach((info, seat) => occupied.set(seat, info.passenger));
+    weekOcc.forEach((info, seat) => {
+      seatDirectionsToday.set(seat, info.directions);
+      if (isSeatFullyTaken(info.directions)) occupied.set(seat, info.passenger);
+    });
   } else {
     // Contexto monitor/sem seleção: ocupação de HOJE no ônibus em exibição
     const today = getTodayStr();
@@ -3388,25 +3417,42 @@ function renderEmbarqueOptions() {
 }
 
 function openModal(num, el) {
-  currentSeat = num; currentLocal = null;
+  currentSeat = num; currentLocal = null; currentDirection = 'ida_volta';
   document.getElementById('modal-seat-num').textContent = num;
   document.getElementById('modal-passenger-name').textContent = currentUser ? currentUser.name : '—';
-  document.querySelectorAll('.embarque-opt').forEach(o => o.classList.remove('active'));
   document.getElementById('btn-ok').disabled = true;
+  // Sentidos ainda disponíveis nessa poltrona (pode já ter alguém só na ida ou só na volta)
+  const disponiveis = availableDirections(seatDirectionsToday.get(num));
+  if (!currentDirection || !disponiveis.includes(currentDirection)) {
+    currentDirection = disponiveis[0] || null;
+  }
   if (selected.has(num)) {
     currentLocal = selected.get(num).local;
-    document.querySelectorAll('.embarque-opt').forEach(o => { if(o.dataset.local===currentLocal) o.classList.add('active'); });
+    const salvo = selected.get(num).direction;
+    if (salvo && disponiveis.includes(salvo)) currentDirection = salvo;
     document.getElementById('btn-ok').disabled = false;
   }
-  renderEmbarqueOptions();
+  renderEmbarqueOptions(); // reconstrói as opções — a marcação "ativa" precisa ser aplicada DEPOIS
+  document.querySelectorAll('#embarque-options .embarque-opt').forEach(o => { if (o.dataset.local === currentLocal) o.classList.add('active'); });
+  document.querySelectorAll('#direction-options .embarque-opt').forEach(o => {
+    const permitido = disponiveis.includes(o.dataset.dir);
+    o.classList.toggle('active', permitido && o.dataset.dir === currentDirection);
+    o.classList.toggle('disabled-opt', !permitido);
+    o.onclick = permitido ? (() => selectDirection(o, o.dataset.dir)) : null;
+    o.title = permitido ? '' : 'Esse sentido já está reservado nessa poltrona para este dia';
+  });
   document.getElementById('modal-overlay').classList.add('open');
 }
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); currentSeat=null; currentLocal=null; }
 function handleOverlayClick(e) { if(e.target===document.getElementById('modal-overlay')) closeModal(); }
 function selectEmbarque(el, local) {
-  document.querySelectorAll('.embarque-opt').forEach(o => o.classList.remove('active'));
+  document.querySelectorAll('#embarque-options .embarque-opt').forEach(o => o.classList.remove('active'));
   el.classList.add('active'); currentLocal = local;
   document.getElementById('btn-ok').disabled = false;
+}
+function selectDirection(el, dir) {
+  document.querySelectorAll('#direction-options .embarque-opt').forEach(o => o.classList.remove('active'));
+  el.classList.add('active'); currentDirection = dir;
 }
 function confirmSeat() {
   if (!currentSeat || !currentLocal) return;
@@ -3420,10 +3466,11 @@ function confirmSeat() {
     return;
   }
   const seatEl = document.querySelector(`.seat[data-num="${currentSeat}"]`);
-  selected.set(currentSeat, {local: currentLocal});
+  selected.set(currentSeat, {local: currentLocal, direction: currentDirection});
   if(seatEl) seatEl.classList.add('selected');
   closeModal(); updateUI();
-  showToast(`Poltrona ${currentSeat} — ${currentLocal} ✓`);
+  const dirLabel = currentDirection === 'ida' ? 'somente ida' : (currentDirection === 'volta' ? 'somente volta' : 'ida e volta');
+  showToast(`Poltrona ${currentSeat} — ${currentLocal} (${dirLabel}) ✓`);
 }
 function removeSeat(num) {
   selected.delete(num);
@@ -3460,16 +3507,23 @@ async function confirmSeats() {
   try {
     const firstNum = nums[0];
     const firstLocal = selected.get(firstNum).local;
+    const firstDirection = selected.get(firstNum).direction || 'ida_volta';
     const now = new Date();
     const dateStr = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     const busId   = selectedBus ? selectedBus.id   : '—';
     const busName = selectedBus ? selectedBus.name : 'Place';
 
-    // Revalida disponibilidade SÓ DO DIA ATUAL (alguém pode ter reservado nesse meio-tempo)
+    // Revalida disponibilidade SÓ DO DIA ATUAL, considerando o sentido escolhido
+    // (alguém pode ter reservado o mesmo sentido nesse meio-tempo)
     const occNow = getOccupiedForDays([day], busId);
-    const conflict = nums.find(n => occNow.has(n));
+    const conflict = nums.find(n => {
+      const dirs = occNow.get(n) ? occNow.get(n).directions : null;
+      if (!dirs) return false;
+      if (dirs.has('ida_volta') || firstDirection === 'ida_volta') return true;
+      return dirs.has(firstDirection);
+    });
     if (conflict) {
-      showToast(`⚠️ A poltrona ${conflict} acabou de ser reservada para ${day.slice(0,5)}. Escolha outra.`);
+      showToast(`⚠️ A poltrona ${conflict} acabou de ser reservada (mesmo sentido) para ${day.slice(0,5)}. Escolha outra.`);
       buildCabin(); updateUI();
       return;
     }
@@ -3480,6 +3534,7 @@ async function confirmSeats() {
       cpf: currentUser.cpf,
       seat: nums.join(', '),
       local: nums.length > 1 ? firstLocal + ' (+' + (nums.length-1) + ')' : firstLocal,
+      direction: firstDirection,
       code,
       date: dateStr,
       reservedAt: dateStr,
@@ -4411,18 +4466,40 @@ function renderDaysHeaderChips() {
 
 // Ocupação combinada dos dias selecionados: poltrona indisponível se ocupada em QUALQUER um deles
 function getOccupiedForDays(days, busId) {
-  const map = new Map(); // seat -> {passenger, days:[]}
+  const map = new Map(); // seat -> {passenger, days:[], directions:Set}
   allPassagens.forEach(t => {
     if (t.cancelled) return;
     if (busId && t.busId !== busId) return; // cada ônibus tem seu próprio mapa de poltronas
     const td = t.travelDate || (t.date ? t.date.slice(0,10) : null);
     if (!td || !days.includes(td)) return;
+    const dir = t.direction || 'ida_volta';
     String(t.seat).split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)).forEach(n => {
-      if (!map.has(n)) map.set(n, { passenger: t.passenger, days: [] });
+      if (!map.has(n)) map.set(n, { passenger: t.passenger, days: [], directions: new Set() });
       map.get(n).days.push(td.slice(0,5));
+      map.get(n).directions.add(dir);
     });
   });
   return map;
+}
+
+// Uma poltrona só está TOTALMENTE indisponível se: já tem reserva "ida e volta",
+// ou já tem AMBOS os sentidos separados ("ida" + "volta") tomados por pessoas
+// diferentes. Se só um sentido está ocupado, ainda sobra o outro sentido livre.
+function isSeatFullyTaken(directions) {
+  if (!directions || directions.size === 0) return false;
+  if (directions.has('ida_volta')) return true;
+  return directions.has('ida') && directions.has('volta');
+}
+
+// Quais sentidos ainda estão disponíveis numa poltrona específica, dado o que
+// já está ocupado nela (usado pro modal mostrar só as opções que cabem).
+function availableDirections(directions) {
+  if (!directions || directions.size === 0) return ['ida_volta', 'ida', 'volta'];
+  if (directions.has('ida_volta')) return [];
+  const out = [];
+  if (!directions.has('ida')) out.push('ida');
+  if (!directions.has('volta')) out.push('volta');
+  return out; // "ida_volta" nunca é oferecido se algum sentido já estiver ocupado
 }
 
 // ---- BOARDING MAP ----
@@ -4780,6 +4857,18 @@ async function processMonitorScan(raw) {
       icon.textContent = '📅';
       title.textContent = 'Passagem de Outro Dia';
       detail.innerHTML = `Passageiro: <span>${escapeHtml(data.passenger)}</span><br>Esta passagem é para <span>${tDay}</span> — hoje é ${getTodayStr()}.`;
+      resultEl.classList.add('show');
+      resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return;
+    }
+    // Quem reservou só a VOLTA não embarca no momento da ida (único horário de
+    // embarque controlado pelo sistema hoje) — evita marcar como "embarcou" de
+    // manhã alguém que só vai usar o ônibus à tarde/noite, na volta.
+    if (data.direction === 'volta') {
+      card.className = 'scan-result-card wrong-bus';
+      icon.textContent = '🔄';
+      title.textContent = 'Passagem Somente Volta';
+      detail.innerHTML = `Passageiro: <span>${escapeHtml(data.passenger)}</span><br>Esta passagem é só para a <b>volta</b> — não embarca agora. Confirme com o passageiro se ele não confundiu o sentido da reserva.`;
       resultEl.classList.add('show');
       resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       return;
@@ -6317,6 +6406,7 @@ function getFilteredPassagens() {
   const busVal  = (document.getElementById('adm-bus-filter') || {}).value || '';
   const statusVal = (document.getElementById('adm-status-filter') || {}).value || '';
   const travelDateVal = (document.getElementById('adm-travel-date-filter') || {}).value || ''; // yyyy-mm-dd
+  const directionVal = (document.getElementById('adm-direction-filter') || {}).value || '';
   const search  = ((document.getElementById('adm-search') || {}).value || '').toLowerCase().trim();
 
   const now = new Date();
@@ -6353,9 +6443,11 @@ function getFilteredPassagens() {
         travelDateMatch = td.getFullYear() === sel.getFullYear() && td.getMonth() === sel.getMonth() && td.getDate() === sel.getDate();
       }
     }
+    // Sentido da viagem
+    const directionMatch = !directionVal || (t.direction || 'ida_volta') === directionVal;
     // Search filter (name or CPF)
     const searchMatch = !search || t.passenger.toLowerCase().includes(search) || t.cpf.includes(search);
-    return dateMatch && busMatch && statusMatch && travelDateMatch && searchMatch;
+    return dateMatch && busMatch && statusMatch && travelDateMatch && directionMatch && searchMatch;
   });
 }
 
@@ -6405,6 +6497,7 @@ function renderAdminTable() {
     const boardedCell = hasBoardedAt
       ? `<td class="td-datetime">${t.boardedAt}</td>`
       : `<td style="color:#9ab5b2;font-size:12px;">—</td>`;
+    const dirInfo = { ida_volta: ['🔄 Ida e volta', 'var(--c5)'], ida: ['➡️ Somente ida', '#b8860b'], volta: ['⬅️ Somente volta', '#8a2be2'] }[t.direction || 'ida_volta'];
     return `
     <tr>
       <td style="color:var(--c5);font-size:12px;">${i + 1}</td>
@@ -6412,6 +6505,7 @@ function renderAdminTable() {
       <td style="font-family:monospace;font-size:12px;color:var(--c5);">${t.cpf}</td>
       <td class="td-seat">${t.seat}</td>
       <td style="font-size:12px;color:var(--c5);white-space:nowrap;">${escapeHtml(t.busName || '—')}</td>
+      <td style="font-size:12px;color:${dirInfo[1]};white-space:nowrap;font-weight:600;">${dirInfo[0]}</td>
       <td><span class="td-badge">${escapeHtml(t.local)}</span></td>
       <td style="font-size:12px;color:var(--c5);white-space:nowrap;">${t.travelDate || (t.date ? t.date.slice(0,10) : '—')}</td>
       <td class="td-datetime">${t.reservedAt || t.date}<small>Reserva</small></td>
@@ -6466,6 +6560,7 @@ function clearAdminFilters() {
   document.getElementById('adm-bus-filter').value = '';
   document.getElementById('adm-status-filter').value = '';
   document.getElementById('adm-travel-date-filter').value = '';
+  document.getElementById('adm-direction-filter').value = '';
   document.getElementById('adm-search').value = '';
   document.getElementById('adm-date-group').style.display = 'none';
   renderAdminTable();
@@ -6474,10 +6569,10 @@ function clearAdminFilters() {
 function exportCSV() {
   const rows = getFilteredPassagens();
   if (!rows.length) { showToast('Nenhum dado para exportar'); return; }
-  const header = ['#','Passageiro','CPF','Poltrona','Linha','Local de Embarque','Reserva','Embarque Confirmado','Status','Código'];
+  const header = ['#','Passageiro','CPF','Poltrona','Linha','Sentido','Local de Embarque','Dia da Viagem','Reserva','Embarque Confirmado','Status','Código'];
   const lines = [header.join(';'), ...rows.map((t,i) => {
     const status = t.cancelled ? 'Cancelado' : (t.boardedAt ? 'Embarcou' : (isBoardingPast(t) ? 'Ausente' : 'Aguardando'));
-    return [i+1, t.passenger, t.cpf, t.seat, t.busName||'—', t.local, t.reservedAt||t.date, t.boardedAt||'—', status, t.code].join(';');
+    return [i+1, t.passenger, t.cpf, t.seat, t.busName||'—', directionLabel(t), t.local, t.travelDate || (t.date ? t.date.slice(0,10) : '—'), t.reservedAt||t.date, t.boardedAt||'—', status, t.code].join(';');
   })];
   const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
   downloadBlob(blob, 'passageiros_paradiso_' + getFileDateStr() + '.csv');
@@ -6489,11 +6584,11 @@ function exportXLSX() {
   if (!rows.length) { showToast('Nenhum dado para exportar'); return; }
   // Build minimal XLSX-compatible XML (SpreadsheetML)
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const headers = ['#','Passageiro','CPF','Poltrona','Local de Embarque','Data/Horário','Código'];
+  const headers = ['#','Passageiro','CPF','Poltrona','Linha','Sentido','Local de Embarque','Dia da Viagem','Reserva','Embarque Confirmado','Status','Código'];
   const hRow = headers.map(h => `<Cell><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('');
   const dRows = rows.map((t,i) => {
     const status = t.cancelled ? 'Cancelado' : (t.boardedAt ? 'Embarcou' : (isBoardingPast(t) ? 'Ausente' : 'Aguardando'));
-    const vals = [i+1, t.passenger, t.cpf, t.seat, t.busName||'—', t.local, t.reservedAt||t.date, t.boardedAt||'—', status, t.code];
+    const vals = [i+1, t.passenger, t.cpf, t.seat, t.busName||'—', directionLabel(t), t.local, t.travelDate || (t.date ? t.date.slice(0,10) : '—'), t.reservedAt||t.date, t.boardedAt||'—', status, t.code];
     return '<Row>' + vals.map(v => `<Cell><Data ss:Type="String">${esc(v)}</Data></Cell>`).join('') + '</Row>';
   }).join('');
   const xml = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Passageiros"><Table><Row>${hRow}</Row>${dRows}</Table></Worksheet></Workbook>`;
@@ -6541,7 +6636,7 @@ function exportPDF() {
     return `<tr>
       <td>${i+1}</td><td>${escapeHtml(t.passenger)}</td><td>${t.cpf}</td>
       <td style="text-align:center;font-weight:700;color:#1B6B62">${t.seat}</td>
-      <td>${escapeHtml(t.busName||'—')}</td><td>${escapeHtml(t.local)}</td><td>${t.travelDate || (t.date ? t.date.slice(0,10) : '—')}</td><td>${t.reservedAt||t.date}</td><td>${t.boardedAt||'—'}</td><td>${status}</td>
+      <td>${escapeHtml(t.busName||'—')}</td><td>${directionLabel(t)}</td><td>${escapeHtml(t.local)}</td><td>${t.travelDate || (t.date ? t.date.slice(0,10) : '—')}</td><td>${t.reservedAt||t.date}</td><td>${t.boardedAt||'—'}</td><td>${status}</td>
     </tr>`;
   }).join('');
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relação de Passageiros</title>
@@ -6555,7 +6650,7 @@ function exportPDF() {
   .footer{margin-top:24px;font-size:11px;color:#7a9a97;}</style></head>
   <body><h1>Place — Relação de Passageiros</h1>
   <p>Data: ${dateLabel} &nbsp;|&nbsp; Total: ${rows.length} passageiro(s) &nbsp;|&nbsp; Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
-  <table><thead><tr><th>#</th><th>Passageiro</th><th>CPF</th><th>Poltrona</th><th>Linha</th><th>Embarque</th><th>Dia da Viagem</th><th>Reserva</th><th>Embarque Confirmado</th><th>Status</th></tr></thead>
+  <table><thead><tr><th>#</th><th>Passageiro</th><th>CPF</th><th>Poltrona</th><th>Linha</th><th>Sentido</th><th>Embarque</th><th>Dia da Viagem</th><th>Reserva</th><th>Embarque Confirmado</th><th>Status</th></tr></thead>
   <tbody>${tableRows}</tbody></table>
   <div class="footer">Documento gerado pelo Place — Sistema de Embarque</div>
   </body></html>`;
