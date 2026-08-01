@@ -3,7 +3,7 @@
 // Estratégia: rede primeiro para o app (atualizações chegam sempre),
 // cache como reserva para abrir offline; APIs nunca são cacheadas.
 // ═══════════════════════════════════════════════════════════════
-const CACHE = 'place-v39';
+const CACHE = 'place-v40';
 const APP_SHELL = [
   './',
   './index.html',
@@ -11,10 +11,17 @@ const APP_SHELL = [
   './icon-512.png'
 ];
 
-// Instala: guarda o esqueleto do app
+// Instala: guarda o esqueleto do app. Cada arquivo é cacheado individualmente
+// (não com addAll) — assim, se UM arquivo faltar ou falhar (ex: ícone ausente
+// num ambiente de teste), isso não derruba a instalação inteira e trava o app
+// pra sempre numa versão antiga, como já aconteceu.
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(APP_SHELL)).then(() => self.skipWaiting())
+    caches.open(CACHE).then((c) =>
+      Promise.all(APP_SHELL.map((url) =>
+        c.add(url).catch((err) => console.warn('[SW] Não consegui cachear (ignorando):', url, err.message))
+      ))
+    ).then(() => self.skipWaiting())
   );
 });
 
