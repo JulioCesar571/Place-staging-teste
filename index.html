@@ -517,6 +517,8 @@ body{-webkit-tap-highlight-color:transparent;}
 .rtc-mon{background:#FFF8DC;color:#7A5800;border:1px solid #D4A017;}
 .rtc-board{background:#E8F5F3;color:#0F6E56;border:1px solid #7EC8BC;}
 .ms-reserved{background:var(--c4);}
+.ms-partial-ida{background:#3B82C4;color:#fff;}
+.ms-partial-volta{background:#D4720B;color:#fff;}
 
 /* Visão simultânea de todas as linhas */
 .rt-occ-grid.all-mode{grid-template-columns:1fr;}
@@ -738,6 +740,14 @@ body{-webkit-tap-highlight-color:transparent;}
 .modal-title{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--c7);margin-bottom:4px;}
 .modal-sub{font-size:13px;color:var(--c5);margin-bottom:24px;}
 .field-group{margin-bottom:18px;}
+@media (max-width:380px){
+  .modal{padding:22px 18px;border-radius:18px;}
+  .field-group{margin-bottom:12px;}
+  .embarque-opt{padding:10px 12px;gap:10px;}
+  .opt-icon{width:30px;height:30px;font-size:15px;border-radius:8px;}
+  .opt-name{font-size:12.5px;}
+  .opt-addr{font-size:10px;}
+}
 .field-label{font-size:12px;font-weight:600;color:var(--c6);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:7px;display:block;}
 .field-readonly{background:var(--c1);border:1.5px solid var(--c2);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:10px;}
 .field-readonly svg{width:18px;height:18px;color:var(--c4);flex-shrink:0;}
@@ -746,6 +756,13 @@ body{-webkit-tap-highlight-color:transparent;}
 .embarque-options{display:flex;flex-direction:column;gap:10px;}
 .embarque-opt{display:flex;align-items:center;gap:14px;border:2px solid var(--c2);border-radius:14px;padding:14px 16px;cursor:pointer;transition:border-color 0.15s,background 0.15s,transform 0.12s;background:#fff;}
 .embarque-opt.disabled-opt{opacity:0.4;cursor:not-allowed;background:#f2f2f2;}
+/* Sentido da Viagem: grade de 3 colunas, bem mais compacta que a lista vertical
+   usada pro local de embarque (que precisa de espaço pra endereço/horário) */
+#direction-options{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+#direction-options .embarque-opt{flex-direction:column;justify-content:center;text-align:center;gap:4px;padding:12px 6px;font-size:12.5px;font-weight:600;line-height:1.25;}
+@media (max-width:380px){
+  #direction-options .embarque-opt{padding:9px 4px;font-size:11px;}
+}
 .embarque-opt:hover{border-color:var(--c4);background:var(--c1);transform:translateX(3px);}
 .embarque-opt.active{border-color:var(--c4);background:var(--c1);}
 .embarque-opt.active .opt-radio{background:var(--c4);border-color:var(--c4);}
@@ -787,7 +804,9 @@ body{-webkit-tap-highlight-color:transparent;}
 
 .ticket-bottom{padding:28px;}
 .ticket-qr-area{display:flex;flex-direction:column;align-items:center;gap:16px;}
-.qr-container{background:#fff;border:3px solid var(--c2);border-radius:16px;padding:16px;display:inline-flex;align-items:center;justify-content:center;}
+.qr-container{background:#fff;border:3px solid var(--c2);border-radius:16px;padding:16px;display:inline-flex;align-items:center;justify-content:center;position:relative;}
+#ticket-qrcode.qr-disabled{filter:grayscale(1) opacity(0.3);}
+.qr-cancelled-stamp{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-16deg);background:rgba(192,57,43,0.94);color:#fff;font-family:'Syne',sans-serif;font-weight:800;font-size:16px;letter-spacing:0.06em;padding:6px 18px;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,0.25);pointer-events:none;white-space:nowrap;}
 #ticket-qrcode{width:180px;height:180px;}
 #ticket-qrcode img,#ticket-qrcode canvas{border-radius:8px;}
 .ticket-qr-hint{font-size:12px;color:var(--c5);text-align:center;line-height:1.5;max-width:260px;}
@@ -972,6 +991,10 @@ body{-webkit-tap-highlight-color:transparent;}
     <div class="app-panel" id="panel-passagens">
       <div class="passagens-wrap">
         <div id="swap-requests-area"></div>
+        <div class="admin-tabs" id="pass-status-tabs" style="margin-bottom:14px;">
+          <button class="nav-btn active" id="pass-tab-active" onclick="setPassagensFilter('active')">🎫 Reservas Ativas</button>
+          <button class="nav-btn" id="pass-tab-cancelled" onclick="setPassagensFilter('cancelled')">🚫 Canceladas</button>
+        </div>
         <div id="passagens-list"></div>
         <button class="btn-new" style="width:100%;margin-top:8px;padding:13px;" onclick="startSwapMode()">🔄 Solicitar troca de poltrona</button>
       </div>
@@ -1044,6 +1067,7 @@ body{-webkit-tap-highlight-color:transparent;}
         <div class="ticket-qr-area">
           <div class="qr-container">
             <div id="ticket-qrcode"></div>
+            <div class="qr-cancelled-stamp" id="qr-cancelled-stamp" style="display:none;">CANCELADA</div>
           </div>
           <p class="ticket-qr-hint">Apresente este QR Code ao motorista. Ele será escaneado para validar sua entrada no ônibus.</p>
           <div class="ticket-passenger">
@@ -1068,9 +1092,9 @@ body{-webkit-tap-highlight-color:transparent;}
       </div>
     </div>
 
-    <div class="ticket-actions" style="justify-content:center;gap:12px;">
-      <button class="btn-new" style="flex:none;padding:13px 28px;" onclick="showApp(); switchPanel('passagens')">← Minhas Passagens</button>
-      <button id="btn-cancel-ticket" style="flex:none;padding:13px 22px;background:linear-gradient(135deg,#c0392b,#922b21);color:#fff;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;border:none;border-radius:12px;cursor:pointer;transition:opacity 0.15s;" onclick="openCancelScreen()">Cancelar Passagem</button>
+    <div class="ticket-actions" style="gap:12px;">
+      <button class="btn-new" style="min-width:0;" onclick="showApp(); switchPanel('passagens')">← Minhas Passagens</button>
+      <button id="btn-cancel-ticket" style="flex:1;min-width:0;background:linear-gradient(135deg,#c0392b,#922b21);color:#fff;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;border:none;border-radius:12px;padding:13px;cursor:pointer;transition:opacity 0.15s;" onclick="openCancelScreen()">Cancelar Passagem</button>
     </div>
   </div>
 </div>
@@ -1111,6 +1135,67 @@ body{-webkit-tap-highlight-color:transparent;}
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
       <button class="btn-ok" id="btn-ok" onclick="confirmSeat()" disabled>Confirmar Poltrona</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: NOVA RESERVA MANUAL (ADMIN) ===== -->
+<div class="modal-overlay" id="admres-modal-overlay" onclick="if(event.target===this) closeAdminNewReservation()">
+  <div class="modal" style="max-width:460px;">
+    <button class="modal-close" onclick="closeAdminNewReservation()">×</button>
+    <div class="modal-title">Nova Reserva Manual</div>
+    <div class="modal-sub">Cria uma reserva em nome de qualquer passageiro cadastrado</div>
+
+    <div class="field-group">
+      <label class="field-label">Passageiro</label>
+      <input type="text" id="admres-search" class="admin-search" style="width:100%;box-sizing:border-box;" placeholder="🔍 Buscar por nome ou CPF..." oninput="adminSearchPassengerList()" autocomplete="off">
+      <div id="admres-search-results" style="max-height:160px;overflow-y:auto;margin-top:6px;"></div>
+      <div id="admres-selected-passenger" style="display:none;margin-top:8px;padding:10px 14px;background:var(--c1);border-radius:10px;font-size:13px;font-weight:600;color:var(--c7);"></div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Linha</label>
+      <select id="admres-bus" class="filter-select" style="width:100%;box-sizing:border-box;">
+        <option value="7515">7515 Valter</option>
+        <option value="8313">8313 Romualdo</option>
+        <option value="6515">6515 Uniplac</option>
+        <option value="2092">2092 Misto</option>
+        <option value="2074">2074 Elias</option>
+      </select>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Dia da viagem</label>
+      <input type="date" id="admres-date" class="admin-date-input" style="width:100%;box-sizing:border-box;">
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Poltrona</label>
+      <input type="number" id="admres-seat" min="1" max="46" placeholder="Número da poltrona (1-46)" style="width:100%;box-sizing:border-box;padding:12px 14px;border:2px solid var(--c2);border-radius:12px;font-size:14px;font-family:inherit;">
+      <div id="admres-seat-hint" style="font-size:12px;color:var(--c5);margin-top:4px;"></div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Local de Embarque</label>
+      <select id="admres-local" class="filter-select" style="width:100%;box-sizing:border-box;">
+        <option value="Pampa Hotel">Pampa Hotel</option>
+        <option value="Igreja de Fátima">Igreja de Fátima</option>
+        <option value="CTG Porteira do Rio Grande">CTG Porteira do Rio Grande</option>
+      </select>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Sentido</label>
+      <select id="admres-direction" class="filter-select" style="width:100%;box-sizing:border-box;">
+        <option value="ida_volta">Ida e volta</option>
+        <option value="ida">Somente ida</option>
+        <option value="volta">Somente volta</option>
+      </select>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeAdminNewReservation()">Cancelar</button>
+      <button class="btn-ok" id="admres-confirm-btn" onclick="confirmAdminNewReservation()">Criar Reserva</button>
     </div>
   </div>
 </div>
@@ -1502,6 +1587,10 @@ body{-webkit-tap-highlight-color:transparent;}
         </div>
 
         <div class="export-btns">
+          <button class="export-btn btn-xlsx" style="background:linear-gradient(135deg,#1D9E75,#146b52);" onclick="openAdminNewReservation()">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+            Nova Reserva Manual
+          </button>
           <button class="export-btn btn-xlsx" onclick="exportXLSX()">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zm-3.5 5l1.5 2.5L9.5 17H8l2-3.2L8.1 11H9.5l1 1.8 1-1.8H13l-1.9 2.8 2 3.2H11.5l-1.5-2.5z"/></svg>
             Exportar Excel
@@ -1533,6 +1622,7 @@ body{-webkit-tap-highlight-color:transparent;}
                 <th>Embarque Confirmado</th>
                 <th>Status</th>
                 <th>Código</th>
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody id="adm-tbody"></tbody>
@@ -2106,7 +2196,7 @@ const dbErr = e => { dbOnline = false; console.warn('DB:', e.message); showToast
 function dbSaveUser(u)        { return sb('/users', { method: 'POST', prefer: 'resolution=merge-duplicates', body: JSON.stringify([userToRow(u)]) }).catch(dbErr); }
 function dbDeleteUser(cpf)    { return sb('/users?cpf=eq.' + encodeURIComponent(cpf), { method: 'DELETE' }).catch(dbErr); }
 function dbInsertTicket(t)    { return sb('/tickets', { method: 'POST', prefer: 'resolution=merge-duplicates', body: JSON.stringify([ticketToRow(t)]) }).catch(dbErr); }
-function dbInsertTicketStrict(t) { return sb('/tickets', { method: 'POST', prefer: 'resolution=merge-duplicates,return=representation', body: JSON.stringify([ticketToRow(t)]) }); }
+function dbInsertTicketStrict(t) { return sb('/tickets', { method: 'POST', prefer: 'resolution=merge-duplicates', body: JSON.stringify([ticketToRow(t)]) }); }
 function dbPatchTicket(code, fields) { return sb('/tickets?code=eq.' + encodeURIComponent(code), { method: 'PATCH', body: JSON.stringify(fields) }).catch(dbErr); }
 function dbInsertHistory(cpf, h) {
   return sb('/history', { method: 'POST', prefer: 'resolution=ignore-duplicates', body: JSON.stringify([{
@@ -3095,18 +3185,37 @@ function switchPanel(panel) {
   if (panel === 'seats') setTimeout(checkBookingWindow, 50);
 }
 
+let passagensFilterStatus = 'active'; // 'active' | 'cancelled' — qual aba está selecionada em Minhas Passagens
+
+function setPassagensFilter(status) {
+  passagensFilterStatus = status;
+  document.getElementById('pass-tab-active').classList.toggle('active', status === 'active');
+  document.getElementById('pass-tab-cancelled').classList.toggle('active', status === 'cancelled');
+  renderPassagens();
+}
+
 function renderPassagens() {
   renderSwapRequests();
   const el = document.getElementById('passagens-list');
-  if (passagens.length === 0) {
-    el.innerHTML = `<div class="passagens-empty">
-      <div class="passagens-empty-icon">🎫</div>
-      <div class="passagens-empty-title">Nenhuma passagem ainda</div>
-      <div class="passagens-empty-sub">Selecione uma poltrona e confirme sua reserva para ver sua passagem aqui.</div>
-    </div>`;
+  const mostrarCanceladas = passagensFilterStatus === 'cancelled';
+  const filtradas = passagens.filter(t => mostrarCanceladas ? t.cancelled : !t.cancelled);
+  if (filtradas.length === 0) {
+    el.innerHTML = mostrarCanceladas
+      ? `<div class="passagens-empty">
+          <div class="passagens-empty-icon">🚫</div>
+          <div class="passagens-empty-title">Nenhuma passagem cancelada</div>
+          <div class="passagens-empty-sub">Passagens que você cancelar vão aparecer aqui.</div>
+        </div>`
+      : `<div class="passagens-empty">
+          <div class="passagens-empty-icon">🎫</div>
+          <div class="passagens-empty-title">Nenhuma passagem ainda</div>
+          <div class="passagens-empty-sub">Selecione uma poltrona e confirme sua reserva para ver sua passagem aqui.</div>
+        </div>`;
     return;
   }
-  el.innerHTML = passagens.map((t, i) => `
+  el.innerHTML = filtradas.map((t) => {
+    const i = passagens.indexOf(t); // índice real no array completo (usado por openTicket/openCancelFromList)
+    return `
     <div class="passagem-card" onclick="openTicket(${i})">
       <div class="passagem-card-top">
         <div>
@@ -3133,7 +3242,8 @@ function renderPassagens() {
         </div>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function openTicket(idx) {
@@ -3156,6 +3266,12 @@ function openTicket(idx) {
     const enc = encodeURIComponent(t.code);
     qrEl.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${enc}" width="180" height="180" style="border-radius:8px" alt="QR Code da passagem">`;
   }
+  // Passagem cancelada: QR fica visualmente "morto" (cinza, opaco, com carimbo)
+  // — reforça pro passageiro que esse código não vale mais nada, mesmo que ele
+  // ainda saiba mostrar a tela. A recusa de verdade já acontece no banco/scanner
+  // do monitor; isso aqui é só o reforço visual.
+  qrEl.classList.toggle('qr-disabled', !!t.cancelled);
+  document.getElementById('qr-cancelled-stamp').style.display = t.cancelled ? 'block' : 'none';
   showScreen('ticket');
 }
 
@@ -3243,8 +3359,8 @@ async function doLogin() {
 async function loginSuccess(user) {
   currentUser = user;
   dbLoadHistory(user.cpf);
-  if (user.role === 'admin') { dbRefresh(); showAdminScreen(); askNotifPermission(); return; }
-  if (user.role === 'monitor') { dbRefresh(); showMonitorScreen(); askNotifPermission(); return; }
+  if (user.role === 'admin') { dbRefresh().then(ok => { if (ok) { try { persistUsers(); } catch(e) {} } }); showAdminScreen(); askNotifPermission(); return; }
+  if (user.role === 'monitor') { dbRefresh().then(ok => { if (ok) { persistOwnUser(user); } }); showMonitorScreen(); askNotifPermission(); return; }
   if (user.role === 'passenger' && getPriority(user) === 'blocked') { showScreen('blocked'); return; }
 
   document.getElementById('app-avatar').textContent = user.initials;
@@ -3256,11 +3372,19 @@ async function loginSuccess(user) {
   // Contexto de seleção sempre limpo no início da sessão
   selectedTravelDays.length = 0;
   selected.clear();
+  passagensFilterStatus = 'active';
 
   // Sincroniza antes de decidir a tela inicial (passagens vêm do banco)
   const syncOk = await dbRefresh();
   // A sincronização pode ter começado antes do login — reconstrói do cache
   rebuildUserPassagens();
+
+  // Sincronizou de verdade agora? Salva um retrato local SÓ DO PRÓPRIO usuário
+  // neste aparelho (não a base inteira — isso exporia a senha de todo mundo no
+  // celular de um passageiro comum). Sem isso, só admins geravam esse cache —
+  // um passageiro comum nunca tinha USERS[cpf] disponível num login futuro sem
+  // internet, mesmo com o verificador de senha offline já salvo corretamente.
+  if (syncOk) { persistOwnUser(user); }
 
   // Essa tentativa de sincronizar falhou (offline ou banco fora do ar) e nada
   // sincronizou agora? Usa a última cópia salva localmente na sincronização boa
@@ -3567,13 +3691,7 @@ async function confirmSeats() {
 
     let created = false;
     try {
-      const resposta = await dbInsertTicketStrict(t);
-      // Diagnóstico temporário: mostra na tela o que foi enviado e o que o
-      // banco realmente gravou (pedimos de volta a linha com return=representation).
-      // Ajuda a confirmar se "direction" está chegando certo, sem precisar do DevTools.
-      const gravado = Array.isArray(resposta) && resposta[0] ? resposta[0].direction : '(sem resposta)';
-      console.log('[DIAGNÓSTICO] Enviado direction=', t.direction, '| Banco confirmou direction=', gravado, '| Resposta completa:', resposta);
-      showToast(`🔎 Enviado: "${t.direction}" — Banco confirmou: "${gravado}"`, 12000);
+      await dbInsertTicketStrict(t);
       passagens.push({...t});
       allPassagens.push({...t});
       created = true;
@@ -3583,8 +3701,6 @@ async function confirmSeats() {
         buildCabin(); updateUI();
         return;
       }
-      console.log('[DIAGNÓSTICO] Erro completo ao inserir:', err.message);
-      showToast(`🔎 Erro ao gravar: ${err.message}`, 12000);
       dbErr(err);
       passagens.push({...t});
       allPassagens.push({...t});
@@ -4374,6 +4490,15 @@ function getBookingCycle() {
   closeAt.setDate(anchor.getDate() + WEEK_CLOSE_OFFSET);
   closeAt.setHours(WEEK_CLOSE_HOUR, 0, 0, 0);
 
+  // ── EXCEÇÃO PONTUAL — só para o fechamento de 01/08/2026 ──────────────
+  // A pedido da associação, o prazo dessa semana específica foi estendido até
+  // domingo 02/08/2026 às 23h59 (em vez do sábado 01/08 às 20h de costume).
+  // Não é uma mudança de regra — a próxima semana já fecha sábado 20h
+  // normalmente. Pode remover este bloco quando essa data já tiver passado.
+  if (closeAt.getFullYear() === 2026 && closeAt.getMonth() === 7 && closeAt.getDate() === 1) {
+    closeAt.setTime(new Date(2026, 7, 2, 23, 59, 59).getTime());
+  }
+
   // Próxima abertura: segunda seguinte às 08h
   const nextOpen = new Date(anchor);
   nextOpen.setDate(anchor.getDate() + 7);
@@ -4993,6 +5118,27 @@ function loadCustomUsers() {
   } catch(e) {}
 }
 
+// ── Cache individual (só o PRÓPRIO usuário) — usado no login comum ─────────
+// Diferente de persistUsers() (que guarda a base INTEIRA — nome, cpf e senha
+// de todo mundo — e só deveria rodar em aparelho de admin), este cache guarda
+// só o registro da pessoa que está logando NESTE aparelho. Evita que o
+// celular de um passageiro comum acumule os dados (inclusive senha) de todos
+// os outros passageiros só por ele ter feito login online normalmente.
+function persistOwnUser(u) {
+  try { localStorage.setItem('place_own_user_' + u.cpf, JSON.stringify(u)); } catch(e) {}
+}
+function loadOwnUsers() {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('place_own_user_')) {
+        const u = JSON.parse(localStorage.getItem(key) || 'null');
+        if (u && u.cpf) USERS[u.cpf] = u;
+      }
+    }
+  } catch(e) {}
+}
+
 function persistUsers() {
   try {
     // Persistência total: grava todos os usuários (passageiros e monitores),
@@ -5003,6 +5149,7 @@ function persistUsers() {
 }
 
 loadCustomUsers();
+loadOwnUsers();
 rebuildMonitorSeats();
 
 function onCuRoleChange() {
@@ -6015,9 +6162,16 @@ function computeBusOcc(day, busId) {
   let reserved = 0, boarded = 0;
   for (let n = 1; n <= 46; n++) {
     if (monSeats.has(n)) { seatState[n] = 'monitor'; continue; }
-    const tk = dayTickets.find(t => String(t.seat).split(',').map(x => parseInt(x.trim())).includes(n));
-    if (!tk) { seatState[n] = 'free'; continue; }
-    if (tk.boardedAt) { seatState[n] = 'boarded'; boarded++; }
+    // Pode haver MAIS DE UM ticket pra mesma poltrona agora (reserva dividida
+    // entre ida e volta) — considera todos, não só o primeiro encontrado.
+    const tks = dayTickets.filter(t => String(t.seat).split(',').map(x => parseInt(x.trim())).includes(n));
+    if (tks.length === 0) { seatState[n] = 'free'; continue; }
+    const anyBoarded = tks.some(t => t.boardedAt);
+    const dirs = new Set(tks.map(t => t.direction || 'ida_volta'));
+    const fullyTaken = dirs.has('ida_volta') || (dirs.has('ida') && dirs.has('volta'));
+    if (anyBoarded) { seatState[n] = 'boarded'; boarded++; }
+    else if (!fullyTaken && dirs.has('ida')) { seatState[n] = 'partial-ida'; reserved++; }
+    else if (!fullyTaken && dirs.has('volta')) { seatState[n] = 'partial-volta'; reserved++; }
     else { seatState[n] = 'reserved'; reserved++; }
   }
   const capacity = 46 - monSeats.size;
@@ -6027,15 +6181,16 @@ function computeBusOcc(day, busId) {
 }
 
 function rtMosaicGrid(seatState, small) {
-  const cls = st => st === 'boarded' ? 'ms-boarded' : st === 'reserved' ? 'ms-reserved' : st === 'monitor' ? 'ms-monitor' : 'ms-free';
+  const cls = st => st === 'boarded' ? 'ms-boarded' : st === 'reserved' ? 'ms-reserved' : st === 'monitor' ? 'ms-monitor' : st === 'partial-ida' ? 'ms-partial-ida' : st === 'partial-volta' ? 'ms-partial-volta' : 'ms-free';
+  const titleFor = (n, st) => st === 'partial-ida' ? `Poltrona ${n} — só ida ocupada` : st === 'partial-volta' ? `Poltrona ${n} — só volta ocupada` : `Poltrona ${n}`;
   let grid = `<div class="${small ? 'mosaic-sm' : ''}"><div class="mosaic">`;
   for (let row = 0; row < 11; row++) {
     const base = row * 4;
-    [base+1, base+2].forEach(n => { grid += `<div class="mosaic-seat ${cls(seatState[n])}" title="Poltrona ${n}">${n}</div>`; });
+    [base+1, base+2].forEach(n => { grid += `<div class="mosaic-seat ${cls(seatState[n])}" title="${titleFor(n, seatState[n])}">${n}</div>`; });
     grid += '<div class="ms-aisle"></div>';
-    [base+3, base+4].forEach(n => { grid += `<div class="mosaic-seat ${cls(seatState[n])}" title="Poltrona ${n}">${n}</div>`; });
+    [base+3, base+4].forEach(n => { grid += `<div class="mosaic-seat ${cls(seatState[n])}" title="${titleFor(n, seatState[n])}">${n}</div>`; });
   }
-  [45,46].forEach(n => { grid += `<div class="mosaic-seat ${cls(seatState[n])}" title="Poltrona ${n}">${n}</div>`; });
+  [45,46].forEach(n => { grid += `<div class="mosaic-seat ${cls(seatState[n])}" title="${titleFor(n, seatState[n])}">${n}</div>`; });
   grid += '<div class="ms-aisle"></div><div class="mosaic-seat ms-free" style="grid-column:span 2;width:auto;font-size:8px;">WC</div></div></div>';
   return grid;
 }
@@ -6062,6 +6217,8 @@ function renderRealtimeOcc() {
   const legend = `<div class="mosaic-legend">
     ${isToday ? '<span><i style="background:#1D9E75"></i>Embarcou</span>' : ''}
     <span><i style="background:var(--c4)"></i>Reservada</span>
+    <span><i style="background:#3B82C4"></i>Só ida</span>
+    <span><i style="background:#D4720B"></i>Só volta</span>
     <span><i style="background:#D4A017"></i>Monitor</span>
     <span><i style="background:#cfe5e1"></i>Livre</span>
   </div>`;
@@ -6540,6 +6697,7 @@ function renderAdminTable() {
       ${boardedCell.replace('</td>','<small>Embarque</small></td>')}
       <td>${statusHtml}</td>
       <td style="font-family:monospace;font-size:11px;color:var(--c5);">${t.code}</td>
+      <td>${!t.cancelled ? `<button onclick="openAdminCancelTicket('${t.code}')" style="background:none;border:1.5px solid #e24b4a;color:#c0392b;font-family:'Syne',sans-serif;font-size:11px;font-weight:700;padding:5px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;">Cancelar</button>` : '—'}</td>
     </tr>`;
   }).join('');
   syncAdminTableScrollbars();
@@ -6580,6 +6738,118 @@ function isBoardingPast(t) {
   // Absent only 1 hour after boarding time
   absentTime.setHours(bt.h + 1, bt.m, 0, 0);
   return now > absentTime;
+}
+
+// ═══ NOVA RESERVA MANUAL (ADMIN) ═══════════════════════════════════════════
+let admResSelectedCpf = null;
+
+function openAdminNewReservation() {
+  admResSelectedCpf = null;
+  document.getElementById('admres-search').value = '';
+  document.getElementById('admres-search-results').innerHTML = '';
+  document.getElementById('admres-selected-passenger').style.display = 'none';
+  document.getElementById('admres-bus').value = '7515';
+  document.getElementById('admres-date').value = '';
+  document.getElementById('admres-seat').value = '';
+  document.getElementById('admres-seat-hint').textContent = '';
+  document.getElementById('admres-local').value = 'Pampa Hotel';
+  document.getElementById('admres-direction').value = 'ida_volta';
+  document.getElementById('admres-modal-overlay').classList.add('open');
+}
+function closeAdminNewReservation() {
+  document.getElementById('admres-modal-overlay').classList.remove('open');
+}
+
+function adminSearchPassengerList() {
+  const q = document.getElementById('admres-search').value.toLowerCase().trim();
+  const resultsEl = document.getElementById('admres-search-results');
+  if (!q) { resultsEl.innerHTML = ''; return; }
+  const matches = Object.values(USERS)
+    .filter(u => u.name.toLowerCase().includes(q) || u.cpf.includes(q))
+    .slice(0, 8);
+  if (matches.length === 0) { resultsEl.innerHTML = '<div style="font-size:12px;color:var(--c5);padding:6px 2px;">Nenhum usuário encontrado.</div>'; return; }
+  resultsEl.innerHTML = matches.map(u => `
+    <div onclick="adminSelectPassengerForReservation('${u.cpf}')" style="padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;display:flex;justify-content:space-between;gap:8px;" onmouseover="this.style.background='var(--c1)'" onmouseout="this.style.background='transparent'">
+      <span style="font-weight:600;color:var(--c7);">${escapeHtml(u.name)}</span>
+      <span style="color:var(--c5);font-family:monospace;font-size:11px;">${u.cpf}</span>
+    </div>`).join('');
+}
+
+function adminSelectPassengerForReservation(cpf) {
+  const u = USERS[cpf];
+  if (!u) return;
+  admResSelectedCpf = cpf;
+  document.getElementById('admres-search').value = '';
+  document.getElementById('admres-search-results').innerHTML = '';
+  const sel = document.getElementById('admres-selected-passenger');
+  sel.style.display = 'block';
+  sel.textContent = `✓ ${u.name} (${u.cpf})`;
+}
+
+async function confirmAdminNewReservation() {
+  const u = admResSelectedCpf ? USERS[admResSelectedCpf] : null;
+  if (!u) { showToast('Selecione um passageiro primeiro.'); return; }
+  const busId = document.getElementById('admres-bus').value;
+  const busName = { '7515':'7515 Valter', '8313':'8313 Romualdo', '6515':'6515 Uniplac', '2092':'2092 Misto', '2074':'2074 Elias' }[busId];
+  const dateVal = document.getElementById('admres-date').value; // yyyy-mm-dd
+  if (!dateVal) { showToast('Escolha o dia da viagem.'); return; }
+  const [y, m, d] = dateVal.split('-');
+  const travelDate = `${d}/${m}/${y}`;
+  const seatNum = parseInt(document.getElementById('admres-seat').value, 10);
+  if (!seatNum || seatNum < 1 || seatNum > 46) { showToast('Informe uma poltrona válida (1 a 46).'); return; }
+  const local = document.getElementById('admres-local').value;
+  const direction = document.getElementById('admres-direction').value;
+
+  // Revalida disponibilidade dessa poltrona/dia/sentido antes de tentar —
+  // o banco também protege isso (trigger), mas checar antes evita uma viagem
+  // desnecessária ao servidor e dá um aviso mais claro pro admin.
+  const occNow = getOccupiedForDays([travelDate], busId);
+  const info = occNow.get(seatNum);
+  if (info) {
+    const conflita = info.directions.has('ida_volta') || info.directions.has(direction) || direction === 'ida_volta';
+    if (conflita) { showToast(`⚠️ Poltrona ${seatNum} já ocupada nesse dia/sentido nessa linha.`); return; }
+  }
+
+  const btn = document.getElementById('admres-confirm-btn');
+  btn.disabled = true; btn.textContent = 'Criando...';
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const code = 'PDS-' + Math.random().toString(36).substring(2,7).toUpperCase() + '-' + seatNum;
+  const t = {
+    passenger: u.name, cpf: u.cpf, seat: String(seatNum), local, direction,
+    code, date: dateStr, reservedAt: dateStr, travelDate, boardedAt: null,
+    busId, busName, bus: 'Place', valid: true
+  };
+  try {
+    await dbInsertTicketStrict(t);
+    allPassagens.push({...t});
+    showToast(`✅ Reserva criada para ${u.name} — poltrona ${seatNum}, ${travelDate}.`);
+    closeAdminNewReservation();
+    renderAdminTable();
+  } catch(err) {
+    if (String(err.message).includes('SEAT_TAKEN')) {
+      showToast(`⚠️ Poltrona ${seatNum} acabou de ser ocupada para esse dia/sentido. Escolha outra.`);
+    } else {
+      dbErr(err);
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = 'Criar Reserva';
+  }
+}
+
+// Cancela uma passagem a partir do painel do admin — o banco já permite isso
+// pra qualquer CPF quando quem faz a chamada tem papel de admin (RLS).
+async function openAdminCancelTicket(code) {
+  const t = allPassagens.find(x => x.code === code);
+  if (!t) return;
+  const diaViagem = t.travelDate || (t.date ? t.date.slice(0,10) : '—');
+  const motivo = prompt(`Cancelar a passagem de ${t.passenger} — poltrona ${t.seat}, dia ${diaViagem}?\n\nMotivo do cancelamento:`, 'Cancelado pelo administrador');
+  if (motivo === null) return; // admin desistiu do prompt
+  t.cancelled = true;
+  t.cancelReason = motivo || 'Cancelado pelo administrador';
+  await dbPatchTicket(code, { cancelled: true, cancel_reason: t.cancelReason });
+  showToast(`Passagem de ${t.passenger} cancelada.`);
+  renderAdminTable();
 }
 
 function clearAdminFilters() {
