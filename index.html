@@ -1621,6 +1621,7 @@ body{-webkit-tap-highlight-color:transparent;}
                 <th>Reserva</th>
                 <th>Embarque Confirmado</th>
                 <th>Status</th>
+                <th>Cancelada em</th>
                 <th>Código</th>
                 <th>Ações</th>
               </tr>
@@ -2181,13 +2182,13 @@ function rowToTicket(r) {
   return { code: r.code, cpf: r.cpf, passenger: r.passenger, seat: r.seat, local: r.local,
            busId: r.bus_id, busName: r.bus_name, bus: r.bus, date: r.date, travelDate: r.travel_date,
            reservedAt: r.reserved_at, boardedAt: r.boarded_at, cancelled: r.cancelled,
-           cancelReason: r.cancel_reason, valid: r.valid, direction: r.direction || 'ida_volta' };
+           cancelReason: r.cancel_reason, cancelledAt: r.cancelled_at, valid: r.valid, direction: r.direction || 'ida_volta' };
 }
 function ticketToRow(t) {
   return { code: t.code, cpf: t.cpf, passenger: t.passenger, seat: String(t.seat), local: t.local,
            bus_id: t.busId || null, bus_name: t.busName || null, bus: t.bus || null, date: t.date || null, travel_date: t.travelDate || null,
            reserved_at: t.reservedAt || null, boarded_at: t.boardedAt || null, cancelled: !!t.cancelled,
-           cancel_reason: t.cancelReason || null, valid: t.valid !== false, direction: t.direction || 'ida_volta' };
+           cancel_reason: t.cancelReason || null, cancelled_at: t.cancelledAt || null, valid: t.valid !== false, direction: t.direction || 'ida_volta' };
 }
 
 // ── Escritas (write-through) ──────────────────────────────────
@@ -3120,16 +3121,20 @@ function doCancel() {
     ? document.getElementById('cancel-textarea').value.trim()
     : cancelReason === 'imprevisto' ? 'Imprevisto' : 'Desistência';
   const motivo = escapeHtml(rawMotivo);
+  const now = new Date();
+  const cancelledAt = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
 
   // Mark as cancelled in BOTH stores (passenger list + admin list)
   passagens[cancelTicketIdx].cancelled = true;
   passagens[cancelTicketIdx].cancelReason = motivo;
+  passagens[cancelTicketIdx].cancelledAt = cancelledAt;
   const apIdx = allPassagens.findIndex(p => p.code === t.code);
   if (apIdx >= 0) {
     allPassagens[apIdx].cancelled = true;
     allPassagens[apIdx].cancelReason = motivo;
+    allPassagens[apIdx].cancelledAt = cancelledAt;
   }
-  dbPatchTicket(t.code, { cancelled: true, cancel_reason: motivo });
+  dbPatchTicket(t.code, { cancelled: true, cancel_reason: motivo, cancelled_at: cancelledAt });
 
   // Free ALL seats of this ticket (handles "5" and "5, 6")
   String(t.seat).split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)).forEach(seatNum => {
@@ -3235,6 +3240,7 @@ function renderPassagens() {
           <div class="pc-info"><div class="pc-info-label">Viagem</div><div class="pc-info-val" style="font-weight:700;color:var(--c6);">${t.travelDate || t.date.slice(0,10)}</div></div>
           <div class="pc-info"><div class="pc-info-label">Reservada em</div><div class="pc-info-val">${t.date}</div></div>
           ${t.cancelled && t.cancelReason ? `<div class="pc-info" style="flex-basis:100%;"><div class="pc-info-label">Motivo do cancelamento</div><div class="pc-info-val" style="color:#922b21;font-size:12px;">${escapeHtml(t.cancelReason)}</div></div>` : ''}
+          ${t.cancelled && t.cancelledAt ? `<div class="pc-info"><div class="pc-info-label">Cancelada em</div><div class="pc-info-val" style="color:#922b21;font-size:12px;">${t.cancelledAt}</div></div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           ${!t.cancelled ? `<button onclick="event.stopPropagation();openCancelFromList(${i})" style="background:none;border:1.5px solid #e24b4a;color:#c0392b;font-family:'Syne',sans-serif;font-size:12px;font-weight:700;padding:6px 12px;border-radius:10px;cursor:pointer;">Cancelar</button>` : ''}
@@ -6696,8 +6702,14 @@ function renderAdminTable() {
       <td class="td-datetime">${t.reservedAt || t.date}<small>Reserva</small></td>
       ${boardedCell.replace('</td>','<small>Embarque</small></td>')}
       <td>${statusHtml}</td>
+      <td style="font-size:12px;color:var(--c5);white-space:nowrap;" title="${t.cancelled && t.cancelReason ? escapeHtml(t.cancelReason) : ''}">${t.cancelled && t.cancelledAt ? t.cancelledAt : '—'}</td>
       <td style="font-family:monospace;font-size:11px;color:var(--c5);">${t.code}</td>
-      <td>${!t.cancelled ? `<button onclick="openAdminCancelTicket('${t.code}')" style="background:none;border:1.5px solid #e24b4a;color:#c0392b;font-family:'Syne',sans-serif;font-size:11px;font-weight:700;padding:5px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;">Cancelar</button>` : '—'}</td>
+      <td>
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:110px;">
+          ${!t.cancelled && !t.boardedAt ? `<button onclick="openAdminConfirmBoarding('${t.code}')" style="background:none;border:1.5px solid #1D9E75;color:#146b52;font-family:'Syne',sans-serif;font-size:11px;font-weight:700;padding:5px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;">✓ Confirmar Embarque</button>` : ''}
+          ${!t.cancelled ? `<button onclick="openAdminCancelTicket('${t.code}')" style="background:none;border:1.5px solid #e24b4a;color:#c0392b;font-family:'Syne',sans-serif;font-size:11px;font-weight:700;padding:5px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;">Cancelar</button>` : '—'}
+        </div>
+      </td>
     </tr>`;
   }).join('');
   syncAdminTableScrollbars();
@@ -6837,6 +6849,24 @@ async function confirmAdminNewReservation() {
   }
 }
 
+// Confirma embarque manualmente pelo admin — funciona mesmo depois do
+// horário que classificaria a passagem como "ausente" automaticamente,
+// já que aqui é uma confirmação humana e direta, não a checagem por horário.
+async function openAdminConfirmBoarding(code) {
+  const t = allPassagens.find(x => x.code === code);
+  if (!t) return;
+  const diaViagem = t.travelDate || (t.date ? t.date.slice(0,10) : '—');
+  const ok = confirm(`Confirmar embarque de ${t.passenger} — poltrona ${t.seat}, dia ${diaViagem}?\n\nIsso marca a passagem como embarcada agora, mesmo que o horário normal de embarque já tenha passado.`);
+  if (!ok) return;
+  const now = new Date();
+  const boardedAt = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  t.boardedAt = boardedAt;
+  await dbPatchTicket(code, { boarded_at: boardedAt });
+  recordHistory(t.cpf, { code: t.code, date: boardedAt, seat: t.seat, local: t.local, bus: t.busName || t.bus, status: 'done' });
+  showToast(`✅ Embarque de ${t.passenger} confirmado manualmente.`);
+  renderAdminTable();
+}
+
 // Cancela uma passagem a partir do painel do admin — o banco já permite isso
 // pra qualquer CPF quando quem faz a chamada tem papel de admin (RLS).
 async function openAdminCancelTicket(code) {
@@ -6845,9 +6875,12 @@ async function openAdminCancelTicket(code) {
   const diaViagem = t.travelDate || (t.date ? t.date.slice(0,10) : '—');
   const motivo = prompt(`Cancelar a passagem de ${t.passenger} — poltrona ${t.seat}, dia ${diaViagem}?\n\nMotivo do cancelamento:`, 'Cancelado pelo administrador');
   if (motivo === null) return; // admin desistiu do prompt
+  const now = new Date();
+  const cancelledAt = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   t.cancelled = true;
   t.cancelReason = motivo || 'Cancelado pelo administrador';
-  await dbPatchTicket(code, { cancelled: true, cancel_reason: t.cancelReason });
+  t.cancelledAt = cancelledAt;
+  await dbPatchTicket(code, { cancelled: true, cancel_reason: t.cancelReason, cancelled_at: cancelledAt });
   showToast(`Passagem de ${t.passenger} cancelada.`);
   renderAdminTable();
 }
@@ -6867,10 +6900,10 @@ function clearAdminFilters() {
 function exportCSV() {
   const rows = getFilteredPassagens();
   if (!rows.length) { showToast('Nenhum dado para exportar'); return; }
-  const header = ['#','Passageiro','CPF','Poltrona','Linha','Sentido','Local de Embarque','Dia da Viagem','Reserva','Embarque Confirmado','Status','Código'];
+  const header = ['#','Passageiro','CPF','Poltrona','Linha','Sentido','Local de Embarque','Dia da Viagem','Reserva','Embarque Confirmado','Status','Cancelada em','Código'];
   const lines = [header.join(';'), ...rows.map((t,i) => {
     const status = t.cancelled ? 'Cancelado' : (t.boardedAt ? 'Embarcou' : (isBoardingPast(t) ? 'Ausente' : 'Aguardando'));
-    return [i+1, t.passenger, t.cpf, t.seat, t.busName||'—', directionLabel(t), t.local, t.travelDate || (t.date ? t.date.slice(0,10) : '—'), t.reservedAt||t.date, t.boardedAt||'—', status, t.code].join(';');
+    return [i+1, t.passenger, t.cpf, t.seat, t.busName||'—', directionLabel(t), t.local, t.travelDate || (t.date ? t.date.slice(0,10) : '—'), t.reservedAt||t.date, t.boardedAt||'—', status, (t.cancelled && t.cancelledAt) ? t.cancelledAt : '—', t.code].join(';');
   })];
   const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
   downloadBlob(blob, 'passageiros_paradiso_' + getFileDateStr() + '.csv');
@@ -6882,11 +6915,11 @@ function exportXLSX() {
   if (!rows.length) { showToast('Nenhum dado para exportar'); return; }
   // Build minimal XLSX-compatible XML (SpreadsheetML)
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const headers = ['#','Passageiro','CPF','Poltrona','Linha','Sentido','Local de Embarque','Dia da Viagem','Reserva','Embarque Confirmado','Status','Código'];
+  const headers = ['#','Passageiro','CPF','Poltrona','Linha','Sentido','Local de Embarque','Dia da Viagem','Reserva','Embarque Confirmado','Status','Cancelada em','Código'];
   const hRow = headers.map(h => `<Cell><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('');
   const dRows = rows.map((t,i) => {
     const status = t.cancelled ? 'Cancelado' : (t.boardedAt ? 'Embarcou' : (isBoardingPast(t) ? 'Ausente' : 'Aguardando'));
-    const vals = [i+1, t.passenger, t.cpf, t.seat, t.busName||'—', directionLabel(t), t.local, t.travelDate || (t.date ? t.date.slice(0,10) : '—'), t.reservedAt||t.date, t.boardedAt||'—', status, t.code];
+    const vals = [i+1, t.passenger, t.cpf, t.seat, t.busName||'—', directionLabel(t), t.local, t.travelDate || (t.date ? t.date.slice(0,10) : '—'), t.reservedAt||t.date, t.boardedAt||'—', status, (t.cancelled && t.cancelledAt) ? t.cancelledAt : '—', t.code];
     return '<Row>' + vals.map(v => `<Cell><Data ss:Type="String">${esc(v)}</Data></Cell>`).join('') + '</Row>';
   }).join('');
   const xml = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Passageiros"><Table><Row>${hRow}</Row>${dRows}</Table></Worksheet></Workbook>`;
@@ -6934,7 +6967,7 @@ function exportPDF() {
     return `<tr>
       <td>${i+1}</td><td>${escapeHtml(t.passenger)}</td><td>${t.cpf}</td>
       <td style="text-align:center;font-weight:700;color:#1B6B62">${t.seat}</td>
-      <td>${escapeHtml(t.busName||'—')}</td><td>${directionLabel(t)}</td><td>${escapeHtml(t.local)}</td><td>${t.travelDate || (t.date ? t.date.slice(0,10) : '—')}</td><td>${t.reservedAt||t.date}</td><td>${t.boardedAt||'—'}</td><td>${status}</td>
+      <td>${escapeHtml(t.busName||'—')}</td><td>${directionLabel(t)}</td><td>${escapeHtml(t.local)}</td><td>${t.travelDate || (t.date ? t.date.slice(0,10) : '—')}</td><td>${t.reservedAt||t.date}</td><td>${t.boardedAt||'—'}</td><td>${status}</td><td>${(t.cancelled && t.cancelledAt) ? t.cancelledAt : '—'}</td>
     </tr>`;
   }).join('');
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relação de Passageiros</title>
@@ -6948,7 +6981,7 @@ function exportPDF() {
   .footer{margin-top:24px;font-size:11px;color:#7a9a97;}</style></head>
   <body><h1>Place — Relação de Passageiros</h1>
   <p>Data: ${dateLabel} &nbsp;|&nbsp; Total: ${rows.length} passageiro(s) &nbsp;|&nbsp; Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
-  <table><thead><tr><th>#</th><th>Passageiro</th><th>CPF</th><th>Poltrona</th><th>Linha</th><th>Sentido</th><th>Embarque</th><th>Dia da Viagem</th><th>Reserva</th><th>Embarque Confirmado</th><th>Status</th></tr></thead>
+  <table><thead><tr><th>#</th><th>Passageiro</th><th>CPF</th><th>Poltrona</th><th>Linha</th><th>Sentido</th><th>Embarque</th><th>Dia da Viagem</th><th>Reserva</th><th>Embarque Confirmado</th><th>Status</th><th>Cancelada em</th></tr></thead>
   <tbody>${tableRows}</tbody></table>
   <div class="footer">Documento gerado pelo Place — Sistema de Embarque</div>
   </body></html>`;
