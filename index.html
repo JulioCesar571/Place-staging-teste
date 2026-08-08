@@ -5688,10 +5688,10 @@ function renderDashboard() {
 
   const now = new Date();
   const monthsBack = 6;
-  const buckets = {}; // 'YYYY-MM' -> {total, boarded, absent, cancelled, days:Set}
+  const buckets = {}; // 'YYYY-MM' -> {total, boarded, absent, cancelled, days:Set, seatDays:Set}
   for (let i = 0; i < monthsBack; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    buckets[d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0')] = { total:0, boarded:0, absent:0, cancelled:0, days:new Set() };
+    buckets[d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0')] = { total:0, boarded:0, absent:0, cancelled:0, days:new Set(), seatDays:new Set() };
   }
   const absentByUser = {};
 
@@ -5708,6 +5708,11 @@ function renderDashboard() {
     b.total++;
     b.days.add(d.toLocaleDateString('pt-BR'));
     if (t.cancelled) { b.cancelled++; return; }
+    // Poltrona física distinta (ônibus+dia+número) — não conta 2x quando uma
+    // mesma poltrona é dividida entre ida e volta (2 tickets, 1 lugar físico).
+    String(t.seat).split(',').map(s => s.trim()).filter(Boolean).forEach(seatNum => {
+      b.seatDays.add(t.busId + '|' + travelOf + '|' + seatNum);
+    });
     if (t.boardedAt) b.boarded++;
     else if (isBoardingPast(t)) {
       b.absent++;
@@ -5719,7 +5724,7 @@ function renderDashboard() {
   const keys = Object.keys(buckets).sort(); // asc
   const cur = buckets[keys[keys.length-1]];
   const prev = buckets[keys[keys.length-2]] || { total:0, boarded:0, absent:0 };
-  const occRate = b => b.days.size ? Math.round((b.total / (b.days.size * 44)) * 100) : 0;
+  const occRate = b => b.days.size ? Math.round((b.seatDays.size / (b.days.size * 44)) * 100) : 0;
   const absRate = b => b.total - b.cancelled > 0 ? Math.round((b.absent / (b.total - b.cancelled)) * 100) : 0;
   const delta = (a, b) => b === 0 ? (a > 0 ? '+100%' : '0%') : ((a-b)/b*100 >= 0 ? '+' : '') + Math.round((a-b)/b*100) + '%';
 
