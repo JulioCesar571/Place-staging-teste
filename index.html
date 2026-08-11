@@ -3266,43 +3266,68 @@ function renderPassagens() {
 }
 
 // ═══ "MEU ÔNIBUS" (passageiro) — reaproveita o mesmo mosaico do painel de
-// Tempo Real do admin (computeBusOcc/rtMosaicGrid), mas mostra só a viagem
-// do próprio passageiro. Não revela nomes de outros passageiros — o mosaico
-// já é assim por padrão (só mostra a cor/estado da poltrona).
+// Tempo Real do admin (computeBusOcc/rtMosaicGrid). Mostra sempre os 5 dias
+// úteis da semana ATUAL (segunda a sexta, a semana de viagem — não a semana
+// de reservas, que é a seguinte), pra qualquer passageiro poder conferir a
+// ocupação de qualquer dia, tenha ou não uma passagem específica pra ele.
+// Não revela nomes de outros passageiros — o mosaico só mostra cor/estado.
+function getCurrentWeekTravelDays() {
+  const now = new Date();
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dow = monday.getDay(); // 0=dom,1=seg,...,6=sáb
+  if (dow === 0) monday.setDate(monday.getDate() + 1);       // domingo → segunda seguinte
+  else if (dow === 6) monday.setDate(monday.getDate() + 2);  // sábado → segunda seguinte
+  else monday.setDate(monday.getDate() - (dow - 1));         // seg-sex → segunda desta semana
+  const days = [];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    days.push(d.toLocaleDateString('pt-BR'));
+  }
+  return days;
+}
+
+let meuOnibusSelectedBus = null; // linha usada quando o passageiro não tem reserva no dia selecionado
+
 function renderMeuOnibus() {
   const el = document.getElementById('meuonibus-content');
   const tabsEl = document.getElementById('meuonibus-daytabs');
   if (!el || !tabsEl || !currentUser) return;
 
-  const minhas = passagens
-    .filter(t => !t.cancelled)
-    .slice()
-    .sort((a, b) => parseTicketDate(a.travelDate || a.date.slice(0,10)) - parseTicketDate(b.travelDate || b.date.slice(0,10)));
+  const semanaAtual = getCurrentWeekTravelDays(); // sempre 5 dias: seg a sex desta semana
 
-  if (minhas.length === 0) {
-    tabsEl.innerHTML = '';
-    el.innerHTML = `<div class="passagens-empty">
-      <div class="passagens-empty-icon">🚌</div>
-      <div class="passagens-empty-title">Nenhuma viagem agendada</div>
-      <div class="passagens-empty-sub">Assim que você tiver uma reserva ativa, o mapa do ônibus aparece aqui.</div>
-    </div>`;
-    return;
+  if (!meuOnibusSelectedDay || !semanaAtual.includes(meuOnibusSelectedDay)) {
+    const hojeStr = getTodayStr();
+    meuOnibusSelectedDay = semanaAtual.includes(hojeStr) ? hojeStr : semanaAtual[0];
   }
 
-  const diasDisponiveis = minhas.map(t => t.travelDate || t.date.slice(0,10));
-  if (!meuOnibusSelectedDay || !diasDisponiveis.includes(meuOnibusSelectedDay)) {
-    meuOnibusSelectedDay = diasDisponiveis[0];
+  // Linha de referência: a passagem do próprio usuário nesse dia (se tiver),
+  // senão a linha mais recente que ele já usou, senão a primeira selecionável.
+  const minhasTodas = allPassagens.filter(t => t.cpf === currentUser.cpf && !t.cancelled);
+  const ticketDoDia = minhasTodas.find(t => (t.travelDate || (t.date||'').slice(0,10)) === meuOnibusSelectedDay);
+  if (!meuOnibusSelectedBus) {
+    const maisRecente = minhasTodas.slice().sort((a,b) => parseTicketDate(b.reservedAt||b.date) - parseTicketDate(a.reservedAt||a.date))[0];
+    meuOnibusSelectedBus = (ticketDoDia && ticketDoDia.busId) || (maisRecente && maisRecente.busId) || '7515';
   }
-  const ticketDoDia = minhas.find(t => (t.travelDate || t.date.slice(0,10)) === meuOnibusSelectedDay);
+  const busIdAtivo = (ticketDoDia && ticketDoDia.busId) || meuOnibusSelectedBus;
+  const busNameAtivo = (ticketDoDia && ticketDoDia.busName) || (BUSES.find(b => b.id === busIdAtivo) || {}).name || '—';
 
-  tabsEl.innerHTML = minhas.length > 1
-    ? `<div class="admin-tabs" style="overflow-x:auto;margin-bottom:14px;">` + minhas.map(t => {
-        const d = t.travelDate || t.date.slice(0,10);
-        return `<button class="nav-btn${d === meuOnibusSelectedDay ? ' active' : ''}" style="flex:none;padding:8px 14px;" onclick="selectMeuOnibusDay('${d}')">${d.slice(0,5)}</button>`;
-      }).join('') + `</div>`
-    : '';
+  tabsEl.innerHTML = `<div class="admin-tabs" style="overflow-x:auto;margin-bottom:10px;">` + semanaAtual.map(d => {
+    const label = ['seg','ter','qua','qui','sex'][semanaAtual.indexOf(d)] + ' ' + d.slice(0,5);
+    return `<button class="nav-btn${d === meuOnibusSelectedDay ? ' active' : ''}" style="flex:none;padding:8px 12px;font-size:12px;" onclick="selectMeuOnibusDay('${d}')">${label}</button>`;
+  }).join('') + `</div>`;
 
-  const occ = computeBusOcc(meuOnibusSelectedDay, ticketDoDia.busId);
+  // Seletor de linha — só aparece se o dia escolhido não tiver passagem própria
+  // (nesse caso não dá pra saber automaticamente qual linha o passageiro quer ver)
+  const seletorLinha = !ticketDoDia ? `
+    <div class="filter-group" style="justify-content:center;margin-bottom:10px;">
+      <span class="filter-label">Linha:</span>
+      <select class="filter-select" onchange="selectMeuOnibusBus(this.value)">
+        ${BUSES.map(b => `<option value="${b.id}" ${b.id === busIdAtivo ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}
+      </select>
+    </div>` : '';
+
+  const occ = computeBusOcc(meuOnibusSelectedDay, busIdAtivo);
   const legend = `<div class="mosaic-legend">
     <span><i style="background:#1D9E75"></i>Embarcou</span>
     <span><i style="background:var(--c4)"></i>Reservada</span>
@@ -3313,9 +3338,10 @@ function renderMeuOnibus() {
   </div>`;
 
   el.innerHTML = `
+    ${seletorLinha}
     <div style="text-align:center;margin-bottom:14px;">
-      <div style="font-family:'Syne',sans-serif;font-weight:700;color:var(--c7);font-size:16px;">${escapeHtml(ticketDoDia.busName || '—')}</div>
-      <div style="font-size:13px;color:var(--c5);margin-top:2px;">${meuOnibusSelectedDay} · sua poltrona: <b style="color:var(--c6);">${ticketDoDia.seat}</b></div>
+      <div style="font-family:'Syne',sans-serif;font-weight:700;color:var(--c7);font-size:16px;">${escapeHtml(busNameAtivo)}</div>
+      <div style="font-size:13px;color:var(--c5);margin-top:2px;">${meuOnibusSelectedDay}${ticketDoDia ? ` · sua poltrona: <b style="color:var(--c6);">${ticketDoDia.seat}</b>` : ' · você não tem reserva nesse dia'}</div>
       <div style="font-size:12px;color:var(--c5);margin-top:2px;">${occ.reserved + occ.boarded} de ${occ.capacity} lugares ocupados (${occ.pct}%)</div>
     </div>
     ${rtMosaicGrid(occ.seatState, false)}
@@ -3324,6 +3350,10 @@ function renderMeuOnibus() {
 }
 function selectMeuOnibusDay(day) {
   meuOnibusSelectedDay = day;
+  renderMeuOnibus();
+}
+function selectMeuOnibusBus(busId) {
+  meuOnibusSelectedBus = busId;
   renderMeuOnibus();
 }
 
@@ -3455,6 +3485,7 @@ async function loginSuccess(user) {
   selected.clear();
   passagensFilterStatus = 'active';
   meuOnibusSelectedDay = null;
+  meuOnibusSelectedBus = null;
 
   // Sincroniza antes de decidir a tela inicial (passagens vêm do banco)
   const syncOk = await dbRefresh();
