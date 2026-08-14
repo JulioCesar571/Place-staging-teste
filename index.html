@@ -5715,6 +5715,13 @@ function renderDashboard() {
     buckets[d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0')] = { total:0, boarded:0, absent:0, cancelled:0, days:new Set(), seatDays:new Set(), busDays:new Set() };
   }
   const absentByUser = {};
+  // Ocupação por dia da semana (segunda a sexta — dias de viagem) e reservas
+  // por dia da semana (segunda a sábado — quando as pessoas costumam reservar,
+  // não quando viajam). Agregado sobre TODO o histórico, não só o mês atual —
+  // um padrão de "qual dia costuma lotar mais" fica mais confiável com mais dados.
+  const weekdayOcc = {1:{seatDays:new Set(),busDays:new Set()}, 2:{seatDays:new Set(),busDays:new Set()}, 3:{seatDays:new Set(),busDays:new Set()}, 4:{seatDays:new Set(),busDays:new Set()}, 5:{seatDays:new Set(),busDays:new Set()}};
+  const weekdayReservas = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0};
+  const DOW_NOMES = {1:'Segunda', 2:'Terça', 3:'Quarta', 4:'Quinta', 5:'Sexta', 6:'Sábado'};
 
   allPassagens.forEach(t => {
     // Agrupa e decide "ausente" pelo dia REAL da viagem, não pelo dia da reserva —
@@ -5731,9 +5738,12 @@ function renderDashboard() {
     if (t.cancelled) { b.cancelled++; return; }
     // Poltrona física distinta (ônibus+dia+número) — não conta 2x quando uma
     // mesma poltrona é dividida entre ida e volta (2 tickets, 1 lugar físico).
+    const dowViagem = d.getDay(); // 0=dom,1=seg,...,6=sáb
     String(t.seat).split(',').map(s => s.trim()).filter(Boolean).forEach(seatNum => {
       b.seatDays.add(t.busId + '|' + travelOf + '|' + seatNum);
+      if (weekdayOcc[dowViagem]) weekdayOcc[dowViagem].seatDays.add(t.busId + '|' + travelOf + '|' + seatNum);
     });
+    if (weekdayOcc[dowViagem]) weekdayOcc[dowViagem].busDays.add(t.busId + '|' + travelOf);
     // Combinação distinta de ônibus+dia com alguma atividade — usada como base
     // de capacidade (44 lugares POR linha ativa naquele dia, não 44 fixo pro
     // dia inteiro — o sistema tem 5 linhas, cada uma com sua própria lotação).
@@ -5744,6 +5754,16 @@ function renderDashboard() {
       const label = t.passenger + '|' + t.cpf;
       absentByUser[label] = (absentByUser[label] || 0) + 1;
     }
+  });
+
+  // Dia da semana em que a RESERVA foi feita (não o dia da viagem) — conta
+  // toda reserva já criada, mesmo as canceladas depois, já que o objetivo é
+  // entender o comportamento de quando as pessoas costumam reservar.
+  allPassagens.forEach(t => {
+    const dReserva = parseTicketDate(t.reservedAt || t.date);
+    if (!dReserva) return;
+    const dow = dReserva.getDay();
+    if (weekdayReservas[dow] !== undefined) weekdayReservas[dow]++;
   });
 
   const keys = Object.keys(buckets).sort(); // asc
@@ -5787,6 +5807,33 @@ function renderDashboard() {
           <div class="bar-track"><div class="bar-fill" style="width:${Math.max(6, r)}%;background:linear-gradient(90deg,#e24b4a,#922b21);"><span class="bar-val">${r}%</span></div></div>
         </div>`;
       }).join('')}
+    </div>
+
+    <div class="chart-section">
+      <div class="chart-title">📅 Ocupação por dia da semana (segunda a sexta — histórico completo)</div>
+      ${[1,2,3,4,5].map(dow => {
+        const wd = weekdayOcc[dow];
+        const pct = wd.busDays.size ? Math.round((wd.seatDays.size / (wd.busDays.size * 44)) * 100) : 0;
+        return `<div class="bar-row">
+          <div class="bar-label">${DOW_NOMES[dow]}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.max(6, pct)}%"><span class="bar-val">${pct}%</span></div></div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="chart-section">
+      <div class="chart-title">🗓️ Em que dia as pessoas costumam reservar (segunda a sábado)</div>
+      ${(() => {
+        const maxRes = Math.max(1, ...[1,2,3,4,5,6].map(d => weekdayReservas[d]));
+        return [1,2,3,4,5,6].map(dow => {
+          const v = weekdayReservas[dow];
+          const pct = Math.max(6, Math.round((v / maxRes) * 100));
+          return `<div class="bar-row">
+            <div class="bar-label">${DOW_NOMES[dow]}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:linear-gradient(90deg,#8E44AD,#5B2C6F);"><span class="bar-val">${v}</span></div></div>
+          </div>`;
+        }).join('');
+      })()}
     </div>
 
     <div class="chart-section" style="margin-bottom:0;">
