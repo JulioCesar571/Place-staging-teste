@@ -918,10 +918,6 @@ body{-webkit-tap-highlight-color:transparent;}
         <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 1 1 7 7v2a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
         Histórico
       </button>
-      <button class="nav-btn" id="nav-meuonibus" onclick="switchPanel('meuonibus')">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M4 16c0 .88.39 1.67 1 2.22V20a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h8v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm9 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM18 11H6V6h12v5z"/></svg>
-        Meu Ônibus
-      </button>
     </div>
 
     <div class="app-panel active" id="panel-seats">
@@ -1022,13 +1018,6 @@ body{-webkit-tap-highlight-color:transparent;}
         <div id="historico-list"></div>
       </div>
     </div><!-- /panel-historico -->
-
-    <div class="app-panel" id="panel-meuonibus">
-      <div class="passagens-wrap">
-        <div id="meuonibus-daytabs"></div>
-        <div id="meuonibus-content"></div>
-      </div>
-    </div><!-- /panel-meuonibus -->
 
   </div><!-- /app-wrap -->
 </div><!-- /screen-app -->
@@ -2262,11 +2251,32 @@ function dbRefresh() {
   dbRefreshPromise = _dbRefreshRun().finally(() => { dbRefreshPromise = null; });
   return dbRefreshPromise;
 }
+// Busca TODAS as linhas de um caminho, paginando em lotes — o Supabase corta
+// qualquer resposta em 1000 linhas por padrão (configuração do projeto, não
+// do pedido em si), então um único sb() com limite alto pode ser cortado
+// silenciosamente sem gerar erro. Isso contorna esse teto buscando em lotes
+// de 1000 até a página vir vazia/incompleta, garantindo os dados completos
+// não importa o tamanho da tabela.
+async function fetchAllRows(basePath) {
+  const pageSize = 1000;
+  let all = [];
+  let offset = 0;
+  const sep = basePath.includes('?') ? '&' : '?';
+  while (true) {
+    const batch = await sb(`${basePath}${sep}limit=${pageSize}&offset=${offset}`);
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    all = all.concat(batch);
+    if (batch.length < pageSize) break; // veio menos que o lote — última página
+    offset += pageSize;
+  }
+  return all;
+}
+
 async function _dbRefreshRun() {
   try {
     const [usersRows, ticketRows, waitRows, swapRows, presRows, busRows, pointRows, annRows] = await Promise.all([
-      sb('/users?select=*'),
-      sb('/tickets?select=*&order=created_at.desc&limit=2000'),
+      fetchAllRows('/users?select=*'),
+      fetchAllRows('/tickets?select=*&order=created_at.desc'),
       sb('/waitlist?select=*&order=joined_at.asc'),
       sb("/swaps?select=*&status=eq.pending"),
       sb('/monitor_presence?select=*'),
@@ -3190,7 +3200,7 @@ function switchPanel(panel) {
     if (!selectedBus) { showBusSelectScreen(); return; }
     if (selectedTravelDays.length === 0) { showWeekScreen(); return; }
   }
-  ['seats','passagens','historico','meuonibus'].forEach(p => {
+  ['seats','passagens','historico'].forEach(p => {
     const el = document.getElementById('panel-' + p);
     if (el) el.classList.toggle('active', panel === p);
     const nav = document.getElementById('nav-' + p);
@@ -3198,12 +3208,10 @@ function switchPanel(panel) {
   });
   if (panel === 'passagens') renderPassagens();
   if (panel === 'historico') { if (currentUser) dbLoadHistory(currentUser.cpf).then(renderHistorico); renderHistorico(); }
-  if (panel === 'meuonibus') renderMeuOnibus();
   if (panel === 'seats') setTimeout(checkBookingWindow, 50);
 }
 
 let passagensFilterStatus = 'active'; // 'active' | 'cancelled' — qual aba está selecionada em Minhas Passagens
-let meuOnibusSelectedDay = null; // dia selecionado no painel "Meu Ônibus" do passageiro
 
 function setPassagensFilter(status) {
   passagensFilterStatus = status;
@@ -3263,98 +3271,6 @@ function renderPassagens() {
     </div>
   `;
   }).join('');
-}
-
-// ═══ "MEU ÔNIBUS" (passageiro) — reaproveita o mesmo mosaico do painel de
-// Tempo Real do admin (computeBusOcc/rtMosaicGrid). Mostra sempre os 5 dias
-// úteis da semana ATUAL (segunda a sexta, a semana de viagem — não a semana
-// de reservas, que é a seguinte), pra qualquer passageiro poder conferir a
-// ocupação de qualquer dia, tenha ou não uma passagem específica pra ele.
-// Não revela nomes de outros passageiros — o mosaico só mostra cor/estado.
-function getCurrentWeekTravelDays() {
-  const now = new Date();
-  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dow = monday.getDay(); // 0=dom,1=seg,...,6=sáb
-  if (dow === 0) monday.setDate(monday.getDate() + 1);       // domingo → segunda seguinte
-  else if (dow === 6) monday.setDate(monday.getDate() + 2);  // sábado → segunda seguinte
-  else monday.setDate(monday.getDate() - (dow - 1));         // seg-sex → segunda desta semana
-  const days = [];
-  for (let i = 0; i < 5; i++) {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    days.push(d.toLocaleDateString('pt-BR'));
-  }
-  return days;
-}
-
-let meuOnibusSelectedBus = null; // linha usada quando o passageiro não tem reserva no dia selecionado
-
-function renderMeuOnibus() {
-  const el = document.getElementById('meuonibus-content');
-  const tabsEl = document.getElementById('meuonibus-daytabs');
-  if (!el || !tabsEl || !currentUser) return;
-
-  const semanaAtual = getCurrentWeekTravelDays(); // sempre 5 dias: seg a sex desta semana
-
-  if (!meuOnibusSelectedDay || !semanaAtual.includes(meuOnibusSelectedDay)) {
-    const hojeStr = getTodayStr();
-    meuOnibusSelectedDay = semanaAtual.includes(hojeStr) ? hojeStr : semanaAtual[0];
-  }
-
-  // Linha de referência: a passagem do próprio usuário nesse dia (se tiver),
-  // senão a linha mais recente que ele já usou, senão a primeira selecionável.
-  const minhasTodas = allPassagens.filter(t => t.cpf === currentUser.cpf && !t.cancelled);
-  const ticketDoDia = minhasTodas.find(t => (t.travelDate || (t.date||'').slice(0,10)) === meuOnibusSelectedDay);
-  if (!meuOnibusSelectedBus) {
-    const maisRecente = minhasTodas.slice().sort((a,b) => parseTicketDate(b.reservedAt||b.date) - parseTicketDate(a.reservedAt||a.date))[0];
-    meuOnibusSelectedBus = (ticketDoDia && ticketDoDia.busId) || (maisRecente && maisRecente.busId) || '7515';
-  }
-  const busIdAtivo = (ticketDoDia && ticketDoDia.busId) || meuOnibusSelectedBus;
-  const busNameAtivo = (ticketDoDia && ticketDoDia.busName) || (BUSES.find(b => b.id === busIdAtivo) || {}).name || '—';
-
-  tabsEl.innerHTML = `<div class="admin-tabs" style="overflow-x:auto;margin-bottom:10px;">` + semanaAtual.map(d => {
-    const label = ['seg','ter','qua','qui','sex'][semanaAtual.indexOf(d)] + ' ' + d.slice(0,5);
-    return `<button class="nav-btn${d === meuOnibusSelectedDay ? ' active' : ''}" style="flex:none;padding:8px 12px;font-size:12px;" onclick="selectMeuOnibusDay('${d}')">${label}</button>`;
-  }).join('') + `</div>`;
-
-  // Seletor de linha — só aparece se o dia escolhido não tiver passagem própria
-  // (nesse caso não dá pra saber automaticamente qual linha o passageiro quer ver)
-  const seletorLinha = !ticketDoDia ? `
-    <div class="filter-group" style="justify-content:center;margin-bottom:10px;">
-      <span class="filter-label">Linha:</span>
-      <select class="filter-select" onchange="selectMeuOnibusBus(this.value)">
-        ${BUSES.map(b => `<option value="${b.id}" ${b.id === busIdAtivo ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}
-      </select>
-    </div>` : '';
-
-  const occ = computeBusOcc(meuOnibusSelectedDay, busIdAtivo);
-  const legend = `<div class="mosaic-legend">
-    <span><i style="background:#1D9E75"></i>Embarcou</span>
-    <span><i style="background:var(--c4)"></i>Reservada</span>
-    <span><i style="background:#3B82C4"></i>Só ida</span>
-    <span><i style="background:#D4720B"></i>Só volta</span>
-    <span><i style="background:#D4A017"></i>Monitor</span>
-    <span><i style="background:#cfe5e1"></i>Livre</span>
-  </div>`;
-
-  el.innerHTML = `
-    ${seletorLinha}
-    <div style="text-align:center;margin-bottom:14px;">
-      <div style="font-family:'Syne',sans-serif;font-weight:700;color:var(--c7);font-size:16px;">${escapeHtml(busNameAtivo)}</div>
-      <div style="font-size:13px;color:var(--c5);margin-top:2px;">${meuOnibusSelectedDay}${ticketDoDia ? ` · sua poltrona: <b style="color:var(--c6);">${ticketDoDia.seat}</b>` : ' · você não tem reserva nesse dia'}</div>
-      <div style="font-size:12px;color:var(--c5);margin-top:2px;">${occ.reserved + occ.boarded} de ${occ.capacity} lugares ocupados (${occ.pct}%)</div>
-    </div>
-    ${rtMosaicGrid(occ.seatState, false)}
-    ${legend}
-  `;
-}
-function selectMeuOnibusDay(day) {
-  meuOnibusSelectedDay = day;
-  renderMeuOnibus();
-}
-function selectMeuOnibusBus(busId) {
-  meuOnibusSelectedBus = busId;
-  renderMeuOnibus();
 }
 
 function openTicket(idx) {
@@ -3484,8 +3400,6 @@ async function loginSuccess(user) {
   selectedTravelDays.length = 0;
   selected.clear();
   passagensFilterStatus = 'active';
-  meuOnibusSelectedDay = null;
-  meuOnibusSelectedBus = null;
 
   // Sincroniza antes de decidir a tela inicial (passagens vêm do banco)
   const syncOk = await dbRefresh();
@@ -5798,7 +5712,7 @@ function renderDashboard() {
   const buckets = {}; // 'YYYY-MM' -> {total, boarded, absent, cancelled, days:Set, seatDays:Set}
   for (let i = 0; i < monthsBack; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    buckets[d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0')] = { total:0, boarded:0, absent:0, cancelled:0, days:new Set(), seatDays:new Set() };
+    buckets[d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0')] = { total:0, boarded:0, absent:0, cancelled:0, days:new Set(), seatDays:new Set(), busDays:new Set() };
   }
   const absentByUser = {};
 
@@ -5820,6 +5734,10 @@ function renderDashboard() {
     String(t.seat).split(',').map(s => s.trim()).filter(Boolean).forEach(seatNum => {
       b.seatDays.add(t.busId + '|' + travelOf + '|' + seatNum);
     });
+    // Combinação distinta de ônibus+dia com alguma atividade — usada como base
+    // de capacidade (44 lugares POR linha ativa naquele dia, não 44 fixo pro
+    // dia inteiro — o sistema tem 5 linhas, cada uma com sua própria lotação).
+    b.busDays.add(t.busId + '|' + travelOf);
     if (t.boardedAt) b.boarded++;
     else if (isBoardingPast(t)) {
       b.absent++;
@@ -5831,8 +5749,9 @@ function renderDashboard() {
   const keys = Object.keys(buckets).sort(); // asc
   const cur = buckets[keys[keys.length-1]];
   const prev = buckets[keys[keys.length-2]] || { total:0, boarded:0, absent:0 };
-  const occRate = b => b.days.size ? Math.round((b.seatDays.size / (b.days.size * 44)) * 100) : 0;
+  const occRate = b => b.busDays.size ? Math.round((b.seatDays.size / (b.busDays.size * 44)) * 100) : 0;
   const absRate = b => b.total - b.cancelled > 0 ? Math.round((b.absent / (b.total - b.cancelled)) * 100) : 0;
+  const cancelRate = b => b.total > 0 ? Math.round((b.cancelled / b.total) * 100) : 0;
   const delta = (a, b) => b === 0 ? (a > 0 ? '+100%' : '0%') : ((a-b)/b*100 >= 0 ? '+' : '') + Math.round((a-b)/b*100) + '%';
 
   const ranking = Object.entries(absentByUser).sort((a,b) => b[1]-a[1]).slice(0, 8);
@@ -5842,6 +5761,7 @@ function renderDashboard() {
     <div class="stats-grid" style="margin-bottom:20px;">
       <div class="adm-stat hl"><div class="adm-stat-num">${occRate(cur)}%</div><div class="adm-stat-label">Ocupação média (mês atual)</div></div>
       <div class="adm-stat" style="background:#fff0f0;border-color:#e24b4a;"><div class="adm-stat-num" style="color:#922b21;">${absRate(cur)}%</div><div class="adm-stat-label">Taxa de ausência</div></div>
+      <div class="adm-stat" style="background:#FFF8DC;border-color:#D4A017;"><div class="adm-stat-num" style="color:#8A6D00;">${cancelRate(cur)}%</div><div class="adm-stat-label">Taxa de cancelamento</div></div>
       <div class="adm-stat"><div class="adm-stat-num">${cur.total}</div><div class="adm-stat-label">Reservas no mês (${delta(cur.total, prev.total)} vs anterior)</div></div>
       <div class="adm-stat" style="background:linear-gradient(135deg,#E8F5F3,#B2D9D0);border-color:var(--c4);"><div class="adm-stat-num" style="color:#0F6E56;">${cur.boarded}</div><div class="adm-stat-label">Embarques no mês</div></div>
     </div>
