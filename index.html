@@ -337,6 +337,8 @@ body{font-family:'DM Sans',sans-serif;background:linear-gradient(135deg,#E8F5F3 
 .admin-tabs{display:flex;gap:6px;background:rgba(255,255,255,0.45);border:1px solid rgba(255,255,255,0.7);border-radius:14px;padding:5px;margin-bottom:22px;backdrop-filter:blur(8px);}
 .admin-tabs .nav-btn{flex:1;}
 .admin-tab-panel{display:none;}
+.dash-sub-panel{display:none;}
+.dash-sub-panel.active{display:block;animation:screenIn 0.2s ease;}
 .admin-tab-panel.active{display:block;animation:screenIn 0.2s ease;}
 .filter-bar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;}
 .filter-group{display:flex;align-items:center;gap:6px;}
@@ -1702,28 +1704,78 @@ body{-webkit-tap-highlight-color:transparent;}
 
     <!-- TAB: DASHBOARD EXECUTIVO -->
     <div class="admin-tab-panel" id="adm-panel-dashboard">
-      <div class="admin-card">
-        <div class="admin-card-title">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
-          Comunicados aos Usuários
-        </div>
-        <div class="create-user-grid">
-          <div class="cu-field"><label class="cu-label">Título</label><input class="cu-input" id="ann-title" placeholder="Ex: Feriado dia 20 — sem ônibus" maxlength="80"></div>
-          <div class="cu-field"><label class="cu-label">Ícone (emoji)</label><input class="cu-input" id="ann-icon" placeholder="📢" maxlength="4"></div>
-        </div>
-        <div class="cu-field" style="margin-top:10px;"><label class="cu-label">Mensagem</label><textarea class="cu-input" id="ann-body" rows="2" placeholder="Detalhes do aviso que aparecerá para todos ao abrir o app" maxlength="300" style="resize:vertical;"></textarea></div>
-        <button class="btn-create-user" onclick="publishAnnouncement()">📢 Publicar comunicado</button>
-        <div style="margin-top:14px;" id="ann-admin-list"></div>
-      </div>
-      <div class="admin-card">
-        <div class="admin-card-title">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 3v18h8V3h-8zM3 21h8v-8H3v8zm0-10h8V3H3v8z"/></svg>
-          Dashboard Executivo Mensal
-        </div>
-        <div id="migration-progress" style="margin-bottom:16px;"></div>
-        <div id="dashboard-content"><div class="admin-empty">Carregando...</div></div>
+
+      <div class="admin-tabs" style="margin-bottom:16px;">
+        <button class="nav-btn active" id="dash-sub-tab-geral" onclick="switchDashboardSub('geral')">📊 Geral</button>
+        <button class="nav-btn" id="dash-sub-tab-comunicacao" onclick="switchDashboardSub('comunicacao')">📢 Comunicação</button>
+        <button class="nav-btn" id="dash-sub-tab-ausencias" onclick="switchDashboardSub('ausencias')">🚫 Ausências</button>
+        <button class="nav-btn" id="dash-sub-tab-cancelamentos" onclick="switchDashboardSub('cancelamentos')">❌ Cancelamentos</button>
       </div>
 
+      <div class="filter-group" style="margin-bottom:14px;">
+        <span class="filter-label">Linha:</span>
+        <select class="filter-select" id="dashboard-bus-filter" onchange="setDashboardBusFilter(this.value)">
+          <option value="">Todas as linhas</option>
+          <option value="7515">7515 Valter</option>
+          <option value="8313">8313 Romualdo</option>
+          <option value="6515">6515 Uniplac</option>
+          <option value="2092">2092 Misto</option>
+          <option value="2074">2074 Elias</option>
+        </select>
+      </div>
+
+      <!-- SUB-ÁREA: GERAL -->
+      <div class="dash-sub-panel active" id="dash-sub-geral">
+        <div class="admin-card">
+          <div class="admin-card-title">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 3v18h8V3h-8zM3 21h8v-8H3v8zm0-10h8V3H3v8z"/></svg>
+            Dashboard Executivo Mensal
+          </div>
+          <div id="migration-progress" style="margin-bottom:16px;"></div>
+          <div id="dashboard-content-geral"><div class="admin-empty">Carregando...</div></div>
+        </div>
+      </div>
+
+      <!-- SUB-ÁREA: COMUNICAÇÃO -->
+      <div class="dash-sub-panel" id="dash-sub-comunicacao">
+        <div class="admin-card">
+          <div class="admin-card-title">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+            Comunicados aos Usuários
+          </div>
+          <div class="create-user-grid">
+            <div class="cu-field"><label class="cu-label">Título</label><input class="cu-input" id="ann-title" placeholder="Ex: Feriado dia 20 — sem ônibus" maxlength="80"></div>
+            <div class="cu-field"><label class="cu-label">Ícone (emoji)</label><input class="cu-input" id="ann-icon" placeholder="📢" maxlength="4"></div>
+          </div>
+          <div class="cu-field" style="margin-top:10px;"><label class="cu-label">Mensagem</label><textarea class="cu-input" id="ann-body" rows="2" placeholder="Detalhes do aviso que aparecerá para todos ao abrir o app" maxlength="300" style="resize:vertical;"></textarea></div>
+          <button class="btn-create-user" onclick="publishAnnouncement()">📢 Publicar comunicado</button>
+          <div style="margin-top:14px;" id="ann-admin-list"></div>
+        </div>
+      </div>
+
+      <!-- SUB-ÁREA: AUSÊNCIAS -->
+      <div class="dash-sub-panel" id="dash-sub-ausencias">
+        <div class="admin-card">
+          <div class="admin-card-title">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg>
+            Ausências
+          </div>
+          <div id="dashboard-content-ausencias"><div class="admin-empty">Carregando...</div></div>
+        </div>
+      </div>
+
+      <!-- SUB-ÁREA: CANCELAMENTOS -->
+      <div class="dash-sub-panel" id="dash-sub-cancelamentos">
+        <div class="admin-card">
+          <div class="admin-card-title">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+            Cancelamentos
+          </div>
+          <div id="dashboard-content-cancelamentos"><div class="admin-empty">Carregando...</div></div>
+        </div>
+      </div>
+
+    </div>
       <div class="admin-card">
         <div class="admin-card-title">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
@@ -5703,9 +5755,21 @@ function removePoint(name) {
 }
 
 // ---- DASHBOARD EXECUTIVO ----
+let dashboardBusFilter = ''; // '' = todas as linhas
+function setDashboardBusFilter(busId) {
+  dashboardBusFilter = busId;
+  renderDashboard();
+}
+function switchDashboardSub(sub) {
+  ['geral','comunicacao','ausencias','cancelamentos'].forEach(s => {
+    const panel = document.getElementById('dash-sub-' + s);
+    if (panel) panel.classList.toggle('active', s === sub);
+    const tab = document.getElementById('dash-sub-tab-' + s);
+    if (tab) tab.classList.toggle('active', s === sub);
+  });
+}
 function renderDashboard() {
-  const el = document.getElementById('dashboard-content');
-  if (!el) return;
+  if (!document.getElementById('dashboard-content-geral')) return;
 
   const now = new Date();
   const monthsBack = 6;
@@ -5724,6 +5788,7 @@ function renderDashboard() {
   const DOW_NOMES = {1:'Segunda', 2:'Terça', 3:'Quarta', 4:'Quinta', 5:'Sexta', 6:'Sábado'};
 
   allPassagens.forEach(t => {
+    if (dashboardBusFilter && t.busId !== dashboardBusFilter) return; // filtro de linha
     // Agrupa e decide "ausente" pelo dia REAL da viagem, não pelo dia da reserva —
     // senão toda reserva antecipada (o normal aqui, já que abre com 1 semana de
     // antecedência) contava como falta antes mesmo do dia da viagem chegar.
@@ -5760,6 +5825,7 @@ function renderDashboard() {
   // toda reserva já criada, mesmo as canceladas depois, já que o objetivo é
   // entender o comportamento de quando as pessoas costumam reservar.
   allPassagens.forEach(t => {
+    if (dashboardBusFilter && t.busId !== dashboardBusFilter) return; // filtro de linha
     const dReserva = parseTicketDate(t.reservedAt || t.date);
     if (!dReserva) return;
     const dow = dReserva.getDay();
@@ -5777,11 +5843,11 @@ function renderDashboard() {
   const ranking = Object.entries(absentByUser).sort((a,b) => b[1]-a[1]).slice(0, 8);
   const maxTotal = Math.max(1, ...keys.map(k => buckets[k].total));
 
-  el.innerHTML = `
+  // ── SUB-ÁREA: GERAL ──────────────────────────────────────────────────
+  const elGeral = document.getElementById('dashboard-content-geral');
+  if (elGeral) elGeral.innerHTML = `
     <div class="stats-grid" style="margin-bottom:20px;">
       <div class="adm-stat hl"><div class="adm-stat-num">${occRate(cur)}%</div><div class="adm-stat-label">Ocupação média (mês atual)</div></div>
-      <div class="adm-stat" style="background:#fff0f0;border-color:#e24b4a;"><div class="adm-stat-num" style="color:#922b21;">${absRate(cur)}%</div><div class="adm-stat-label">Taxa de ausência</div></div>
-      <div class="adm-stat" style="background:#FFF8DC;border-color:#D4A017;"><div class="adm-stat-num" style="color:#8A6D00;">${cancelRate(cur)}%</div><div class="adm-stat-label">Taxa de cancelamento</div></div>
       <div class="adm-stat"><div class="adm-stat-num">${cur.total}</div><div class="adm-stat-label">Reservas no mês (${delta(cur.total, prev.total)} vs anterior)</div></div>
       <div class="adm-stat" style="background:linear-gradient(135deg,#E8F5F3,#B2D9D0);border-color:var(--c4);"><div class="adm-stat-num" style="color:#0F6E56;">${cur.boarded}</div><div class="adm-stat-label">Embarques no mês</div></div>
     </div>
@@ -5799,17 +5865,6 @@ function renderDashboard() {
     </div>
 
     <div class="chart-section">
-      <div class="chart-title">📉 Taxa de ausência por mês</div>
-      ${keys.map(k => {
-        const r = absRate(buckets[k]);
-        return `<div class="bar-row">
-          <div class="bar-label">${monthLabelOf(k)}</div>
-          <div class="bar-track"><div class="bar-fill" style="width:${Math.max(6, r)}%;background:linear-gradient(90deg,#e24b4a,#922b21);"><span class="bar-val">${r}%</span></div></div>
-        </div>`;
-      }).join('')}
-    </div>
-
-    <div class="chart-section">
       <div class="chart-title">📅 Ocupação por dia da semana (segunda a sexta — histórico completo)</div>
       ${[1,2,3,4,5].map(dow => {
         const wd = weekdayOcc[dow];
@@ -5821,7 +5876,7 @@ function renderDashboard() {
       }).join('')}
     </div>
 
-    <div class="chart-section">
+    <div class="chart-section" style="margin-bottom:0;">
       <div class="chart-title">🗓️ Em que dia as pessoas costumam reservar (segunda a sábado)</div>
       ${(() => {
         const maxRes = Math.max(1, ...[1,2,3,4,5,6].map(d => weekdayReservas[d]));
@@ -5834,6 +5889,24 @@ function renderDashboard() {
           </div>`;
         }).join('');
       })()}
+    </div>`;
+
+  // ── SUB-ÁREA: AUSÊNCIAS ──────────────────────────────────────────────
+  const elAusencias = document.getElementById('dashboard-content-ausencias');
+  if (elAusencias) elAusencias.innerHTML = `
+    <div class="stats-grid" style="margin-bottom:20px;">
+      <div class="adm-stat" style="background:#fff0f0;border-color:#e24b4a;"><div class="adm-stat-num" style="color:#922b21;">${absRate(cur)}%</div><div class="adm-stat-label">Taxa de ausência (mês atual)</div></div>
+    </div>
+
+    <div class="chart-section">
+      <div class="chart-title">📉 Taxa de ausência por mês</div>
+      ${keys.map(k => {
+        const r = absRate(buckets[k]);
+        return `<div class="bar-row">
+          <div class="bar-label">${monthLabelOf(k)}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.max(6, r)}%;background:linear-gradient(90deg,#e24b4a,#922b21);"><span class="bar-val">${r}%</span></div></div>
+        </div>`;
+      }).join('')}
     </div>
 
     <div class="chart-section" style="margin-bottom:0;">
@@ -5849,6 +5922,23 @@ function renderDashboard() {
             <span class="hist-item-badge hb-absent">${count} falta${count>1?'s':''}</span>
           </div>`;
         }).join('')}
+    </div>`;
+
+  // ── SUB-ÁREA: CANCELAMENTOS ──────────────────────────────────────────
+  const elCancelamentos = document.getElementById('dashboard-content-cancelamentos');
+  if (elCancelamentos) elCancelamentos.innerHTML = `
+    <div class="stats-grid" style="margin-bottom:20px;">
+      <div class="adm-stat" style="background:#FFF8DC;border-color:#D4A017;"><div class="adm-stat-num" style="color:#8A6D00;">${cancelRate(cur)}%</div><div class="adm-stat-label">Taxa de cancelamento (mês atual)</div></div>
+    </div>
+    <div class="chart-section" style="margin-bottom:0;">
+      <div class="chart-title">📉 Taxa de cancelamento por mês</div>
+      ${keys.map(k => {
+        const r = cancelRate(buckets[k]);
+        return `<div class="bar-row">
+          <div class="bar-label">${monthLabelOf(k)}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.max(6, r)}%;background:linear-gradient(90deg,#D4A017,#8A6D00);"><span class="bar-val">${r}%</span></div></div>
+        </div>`;
+      }).join('')}
     </div>`;
 }
 
