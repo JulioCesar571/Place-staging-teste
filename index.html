@@ -1748,6 +1748,22 @@ body{-webkit-tap-highlight-color:transparent;}
             <div class="cu-field"><label class="cu-label">Ícone (emoji)</label><input class="cu-input" id="ann-icon" placeholder="📢" maxlength="4"></div>
           </div>
           <div class="cu-field" style="margin-top:10px;"><label class="cu-label">Mensagem</label><textarea class="cu-input" id="ann-body" rows="2" placeholder="Detalhes do aviso que aparecerá para todos ao abrir o app" maxlength="300" style="resize:vertical;"></textarea></div>
+          <div class="cu-field" style="margin-top:10px;">
+            <label class="cu-label">Destinatário</label>
+            <select class="cu-input" id="ann-target-role" onchange="toggleAnnTargetPerson()">
+              <option value="all">Todos</option>
+              <option value="passenger">Somente passageiros</option>
+              <option value="monitor">Somente monitores</option>
+              <option value="admin">Somente administradores</option>
+              <option value="one">Uma pessoa específica...</option>
+            </select>
+          </div>
+          <div class="cu-field" id="ann-target-person-wrap" style="display:none;margin-top:10px;">
+            <label class="cu-label">Buscar pessoa</label>
+            <input type="text" class="cu-input" id="ann-target-search" placeholder="🔍 Nome ou CPF..." autocomplete="off" oninput="annSearchTargetPerson()">
+            <div id="ann-target-results" style="max-height:150px;overflow-y:auto;margin-top:6px;"></div>
+            <div id="ann-target-selected" style="display:none;margin-top:8px;padding:10px 14px;background:var(--c1);border-radius:10px;font-size:13px;font-weight:600;color:var(--c7);"></div>
+          </div>
           <button class="btn-create-user" onclick="publishAnnouncement()">📢 Publicar comunicado</button>
           <div style="margin-top:14px;" id="ann-admin-list"></div>
         </div>
@@ -1781,7 +1797,7 @@ body{-webkit-tap-highlight-color:transparent;}
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
           Backup Completo do Banco
         </div>
-        <div class="bulk-hint">Exporta todas as 10 tabelas (usuários, passagens, histórico, resumos, linhas, comunicados...) em um arquivo .json. Guarde-o fora do sistema — é sua proteção contra perda de dados, já que o plano gratuito do Supabase não faz backups automáticos.</div>
+        <div class="bulk-hint">Exporta todas as 10 tabelas (usuários, passagens, histórico, resumos, linhas, comunicados...) em um arquivo .json. Guarde-o fora do sistema — é sua proteção contra perda de dados.</div>
         <button class="btn-create-user" id="btn-full-backup" onclick="exportFullBackup()">🛡️ Exportar backup completo (.json)</button>
         <div class="ai-meta" id="backup-last-info" style="margin-top:10px;"></div>
       </div>
@@ -6137,10 +6153,19 @@ function runNotificationChecks() {
   }
 }
 
+// Decide se um comunicado deve ser mostrado ao usuário atualmente logado —
+// leva em conta tanto o alvo por papel (target_role) quanto por pessoa
+// específica (target_cpf, que manda mais que target_role quando presente).
+function isAnnouncementForMe(a) {
+  if (!currentUser) return false;
+  if (a.target_cpf) return a.target_cpf === currentUser.cpf;
+  return !a.target_role || a.target_role === 'all' || a.target_role === currentUser.role;
+}
+
 // 6. Novo comunicado do admin
 function notifyNewAnnouncements() {
   if (!currentUser) return;
-  ANNOUNCEMENTS.filter(a => a.active !== false).forEach(a => {
+  ANNOUNCEMENTS.filter(a => a.active !== false && isAnnouncementForMe(a)).forEach(a => {
     notifyOnce(`ann:${a.id}`, `${a.icon || '📢'} ${a.title}`, (a.body || '').slice(0, 120));
   });
 }
@@ -6181,7 +6206,7 @@ function renderAnnouncementBanners() {
     document.getElementById('screen-monitor')
   ];
   const dismissed = getDismissedAnns();
-  const active = ANNOUNCEMENTS.filter(a => a.active !== false && !dismissed.includes(a.id));
+  const active = ANNOUNCEMENTS.filter(a => a.active !== false && !dismissed.includes(a.id) && isAnnouncementForMe(a));
   spots.forEach(spot => {
     if (!spot) return;
     let wrap = spot.querySelector('.announce-wrap');
@@ -6200,9 +6225,49 @@ function renderAnnouncementBanners() {
 }
 
 // ═══ Admin: gestão de comunicados (card no Dashboard) ═══
+let annTargetCpf = null;
+function toggleAnnTargetPerson() {
+  const isOne = document.getElementById('ann-target-role').value === 'one';
+  document.getElementById('ann-target-person-wrap').style.display = isOne ? 'block' : 'none';
+  if (!isOne) {
+    annTargetCpf = null;
+    document.getElementById('ann-target-search').value = '';
+    document.getElementById('ann-target-results').innerHTML = '';
+    document.getElementById('ann-target-selected').style.display = 'none';
+  }
+}
+function annSearchTargetPerson() {
+  const q = document.getElementById('ann-target-search').value.toLowerCase().trim();
+  const resultsEl = document.getElementById('ann-target-results');
+  if (!q) { resultsEl.innerHTML = ''; return; }
+  const matches = Object.values(USERS)
+    .filter(u => u.name.toLowerCase().includes(q) || u.cpf.includes(q))
+    .slice(0, 8);
+  if (matches.length === 0) { resultsEl.innerHTML = '<div style="font-size:12px;color:var(--c5);padding:6px 2px;">Nenhum usuário encontrado.</div>'; return; }
+  resultsEl.innerHTML = matches.map(u => `
+    <div onclick="annSelectTargetPerson('${u.cpf}')" style="padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;display:flex;justify-content:space-between;gap:8px;" onmouseover="this.style.background='var(--c1)'" onmouseout="this.style.background='transparent'">
+      <span style="font-weight:600;color:var(--c7);">${escapeHtml(u.name)}</span>
+      <span style="color:var(--c5);font-family:monospace;font-size:11px;">${u.cpf}</span>
+    </div>`).join('');
+}
+function annSelectTargetPerson(cpf) {
+  const u = USERS[cpf];
+  if (!u) return;
+  annTargetCpf = cpf;
+  document.getElementById('ann-target-search').value = '';
+  document.getElementById('ann-target-results').innerHTML = '';
+  const sel = document.getElementById('ann-target-selected');
+  sel.style.display = 'block';
+  sel.textContent = `✓ ${u.name} (${u.cpf})`;
+}
+
 function renderAnnouncementsAdmin() {
   const el = document.getElementById('ann-admin-list');
   if (!el) return;
+  const targetLabel = a => {
+    if (a.target_cpf) { const u = USERS[a.target_cpf]; return `só para ${u ? u.name : a.target_cpf}`; }
+    return { passenger:'só passageiros', monitor:'só monitores', admin:'só admins' }[a.target_role] || 'visível a todos';
+  };
   el.innerHTML = ANNOUNCEMENTS.length === 0
     ? '<div class="consol-empty">Nenhum comunicado publicado.</div>'
     : ANNOUNCEMENTS.map(a => `
@@ -6210,7 +6275,7 @@ function renderAnnouncementsAdmin() {
         <div>
           <div class="ai-title">${a.icon || '📢'} ${escapeHtml(a.title || '')}</div>
           <div class="ai-body">${escapeHtml(a.body || '')}</div>
-          <div class="ai-meta">${new Date(a.created_at).toLocaleString('pt-BR')} ${a.active === false ? '· <b>desativado</b>' : '· visível a todos'}</div>
+          <div class="ai-meta">${new Date(a.created_at).toLocaleString('pt-BR')} ${a.active === false ? '· <b>desativado</b>' : '· ' + targetLabel(a)}</div>
         </div>
         <div class="ai-actions">
           <button class="btn-edit-user" onclick="toggleAnnouncement(${a.id}, ${a.active === false})">${a.active === false ? '▶️' : '⏸️'}</button>
@@ -6222,15 +6287,22 @@ async function publishAnnouncement() {
   const title = document.getElementById('ann-title').value.trim();
   const body = document.getElementById('ann-body').value.trim();
   const icon = document.getElementById('ann-icon').value.trim() || '📢';
+  const roleSel = document.getElementById('ann-target-role').value;
   if (!title) { showToast('Dê um título ao comunicado.'); return; }
-  await dbSaveAnnouncement({ title, body, icon, active: true, author: currentUser ? currentUser.name : 'Admin' });
+  if (roleSel === 'one' && !annTargetCpf) { showToast('Busque e selecione a pessoa que vai receber o comunicado.'); return; }
+  const target_role = roleSel === 'one' ? 'all' : roleSel; // com target_cpf preenchido, target_role vira irrelevante
+  const target_cpf = roleSel === 'one' ? annTargetCpf : null;
+  await dbSaveAnnouncement({ title, body, icon, active: true, author: currentUser ? currentUser.name : 'Admin', target_role, target_cpf });
   document.getElementById('ann-title').value = '';
   document.getElementById('ann-body').value = '';
   document.getElementById('ann-icon').value = '';
+  document.getElementById('ann-target-role').value = 'all';
+  toggleAnnTargetPerson();
   _lastDbSnapshot = ''; // força reprocessamento
   await dbRefresh();
   renderAnnouncementsAdmin();
-  showToast('📢 Comunicado publicado — todos verão ao abrir o app.');
+  const quem = target_cpf ? (USERS[target_cpf] ? USERS[target_cpf].name : 'essa pessoa') : ({passenger:'os passageiros', monitor:'os monitores', admin:'os admins'}[target_role] || 'todos');
+  showToast(`📢 Comunicado publicado — ${quem} verão ao abrir o app.`);
 }
 function toggleAnnouncement(id, activate) {
   dbPatchAnnouncement(id, { active: !!activate });
