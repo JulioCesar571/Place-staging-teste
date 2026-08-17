@@ -2250,13 +2250,13 @@ function rowToTicket(r) {
   return { code: r.code, cpf: r.cpf, passenger: r.passenger, seat: r.seat, local: r.local,
            busId: r.bus_id, busName: r.bus_name, bus: r.bus, date: r.date, travelDate: r.travel_date,
            reservedAt: r.reserved_at, boardedAt: r.boarded_at, cancelled: r.cancelled,
-           cancelReason: r.cancel_reason, cancelledAt: r.cancelled_at, valid: r.valid, direction: r.direction || 'ida_volta' };
+           cancelReason: r.cancel_reason, cancelledAt: r.cancelled_at, cancelledBy: r.cancelled_by, valid: r.valid, direction: r.direction || 'ida_volta' };
 }
 function ticketToRow(t) {
   return { code: t.code, cpf: t.cpf, passenger: t.passenger, seat: String(t.seat), local: t.local,
            bus_id: t.busId || null, bus_name: t.busName || null, bus: t.bus || null, date: t.date || null, travel_date: t.travelDate || null,
            reserved_at: t.reservedAt || null, boarded_at: t.boardedAt || null, cancelled: !!t.cancelled,
-           cancel_reason: t.cancelReason || null, cancelled_at: t.cancelledAt || null, valid: t.valid !== false, direction: t.direction || 'ida_volta' };
+           cancel_reason: t.cancelReason || null, cancelled_at: t.cancelledAt || null, cancelled_by: t.cancelledBy || null, valid: t.valid !== false, direction: t.direction || 'ida_volta' };
 }
 
 // ── Escritas (write-through) ──────────────────────────────────
@@ -3217,13 +3217,15 @@ function doCancel() {
   passagens[cancelTicketIdx].cancelled = true;
   passagens[cancelTicketIdx].cancelReason = motivo;
   passagens[cancelTicketIdx].cancelledAt = cancelledAt;
+  passagens[cancelTicketIdx].cancelledBy = 'passenger';
   const apIdx = allPassagens.findIndex(p => p.code === t.code);
   if (apIdx >= 0) {
     allPassagens[apIdx].cancelled = true;
     allPassagens[apIdx].cancelReason = motivo;
     allPassagens[apIdx].cancelledAt = cancelledAt;
+    allPassagens[apIdx].cancelledBy = 'passenger';
   }
-  dbPatchTicket(t.code, { cancelled: true, cancel_reason: motivo, cancelled_at: cancelledAt });
+  dbPatchTicket(t.code, { cancelled: true, cancel_reason: motivo, cancelled_at: cancelledAt, cancelled_by: 'passenger' });
 
   // Free ALL seats of this ticket (handles "5" and "5, 6")
   String(t.seat).split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)).forEach(seatNum => {
@@ -5940,13 +5942,22 @@ function renderDashboard() {
         }).join('')}
     </div>`;
 
+  // Justificativas de cancelamento — lista dos mais recentes, com quem cancelou
+  const canceladas = allPassagens
+    .filter(t => t.cancelled && (!dashboardBusFilter || t.busId === dashboardBusFilter))
+    .slice()
+    .sort((a, b) => (parseTicketDate(b.cancelledAt) || new Date(0)) - (parseTicketDate(a.cancelledAt) || new Date(0)));
+  const porPassageiro = canceladas.filter(t => t.cancelledBy === 'passenger').length;
+  const porAdmin = canceladas.filter(t => t.cancelledBy && t.cancelledBy !== 'passenger').length;
+  const semRegistro = canceladas.length - porPassageiro - porAdmin;
+
   // ── SUB-ÁREA: CANCELAMENTOS ──────────────────────────────────────────
   const elCancelamentos = document.getElementById('dashboard-content-cancelamentos');
   if (elCancelamentos) elCancelamentos.innerHTML = `
     <div class="stats-grid" style="margin-bottom:20px;">
       <div class="adm-stat" style="background:#FFF8DC;border-color:#D4A017;"><div class="adm-stat-num" style="color:#8A6D00;">${cancelRate(cur)}%</div><div class="adm-stat-label">Taxa de cancelamento (mês atual)</div></div>
     </div>
-    <div class="chart-section" style="margin-bottom:0;">
+    <div class="chart-section">
       <div class="chart-title">📉 Taxa de cancelamento por mês</div>
       ${keys.map(k => {
         const r = cancelRate(buckets[k]);
@@ -5955,6 +5966,28 @@ function renderDashboard() {
           <div class="bar-track"><div class="bar-fill" style="width:${Math.max(6, r)}%;background:linear-gradient(90deg,#D4A017,#8A6D00);"><span class="bar-val">${r}%</span></div></div>
         </div>`;
       }).join('')}
+    </div>
+
+    <div class="chart-section" style="margin-bottom:0;">
+      <div class="chart-title">📝 Justificativas de cancelamento</div>
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+        <span style="font-size:12px;background:var(--c1);padding:6px 12px;border-radius:20px;color:var(--c7);">👤 Pelo próprio usuário: <b>${porPassageiro}</b></span>
+        <span style="font-size:12px;background:var(--c1);padding:6px 12px;border-radius:20px;color:var(--c7);">🛠️ Pelo administrador: <b>${porAdmin}</b></span>
+        ${semRegistro > 0 ? `<span style="font-size:12px;background:var(--c1);padding:6px 12px;border-radius:20px;color:var(--c5);">Sem registro de origem (cancelamentos antigos): <b>${semRegistro}</b></span>` : ''}
+      </div>
+      <div style="max-height:360px;overflow-y:auto;">
+        ${canceladas.length === 0 ? '<div style="font-size:13px;color:var(--c5);padding:8px;">Nenhum cancelamento registrado.</div>' : canceladas.slice(0, 50).map(t => {
+          const quem = t.cancelledBy === 'passenger' ? '👤 Pelo próprio usuário' : t.cancelledBy ? `🛠️ Pelo admin: ${escapeHtml(t.cancelledBy)}` : '— origem não registrada';
+          return `<div style="background:#fff;border:1.5px solid var(--c2);border-radius:12px;padding:12px 14px;margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+              <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;color:var(--c7);">${escapeHtml(t.passenger)} — poltrona ${t.seat}</div>
+              <div style="font-size:11px;color:var(--c5);white-space:nowrap;">${t.cancelledAt || '—'}</div>
+            </div>
+            <div style="font-size:11.5px;color:var(--c5);margin-top:2px;">${quem}</div>
+            ${t.cancelReason ? `<div style="font-size:12.5px;color:var(--c6);margin-top:6px;font-style:italic;">"${escapeHtml(t.cancelReason)}"</div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
     </div>`;
 }
 
@@ -7118,10 +7151,12 @@ async function openAdminCancelTicket(code) {
   if (motivo === null) return; // admin desistiu do prompt
   const now = new Date();
   const cancelledAt = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const cancelledBy = currentUser ? currentUser.name : 'Admin';
   t.cancelled = true;
   t.cancelReason = motivo || 'Cancelado pelo administrador';
   t.cancelledAt = cancelledAt;
-  await dbPatchTicket(code, { cancelled: true, cancel_reason: t.cancelReason, cancelled_at: cancelledAt });
+  t.cancelledBy = cancelledBy;
+  await dbPatchTicket(code, { cancelled: true, cancel_reason: t.cancelReason, cancelled_at: cancelledAt, cancelled_by: cancelledBy });
   showToast(`Passagem de ${t.passenger} cancelada.`);
   renderAdminTable();
 }
